@@ -1,6 +1,6 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Linking, Platform } from "react-native";
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Linking, Platform, Alert } from "react-native";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -140,7 +140,7 @@ export default function StudentsScreen() {
       : (allStudents || []).filter((s: any) => s.className === selectedClass);
     if (!studs.length) { setError("No students to delete"); return; }
     const label = isAllSections ? "ALL sections of " + selectedKey : selectedClass;
-    if (!window.confirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.")) return;
+    if (!Platform.OS === "web" ? Platform.OS === "web" && window.confirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.")) : false return;
     setDeleteAllLoading(true);
     for (const s of studs) {
       await deleteStudent(s.id).catch(() => {});
@@ -217,9 +217,7 @@ export default function StudentsScreen() {
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `${className}-students.csv`; a.click();
-    URL.revokeObjectURL(url);
+    if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
   }
 
   function downloadSubjectStudents(className: string, subject: string) {
@@ -229,9 +227,7 @@ export default function StudentsScreen() {
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a"); a.href = url;
-    a.download = `${className}-${subject}-students.csv`; a.click();
-    URL.revokeObjectURL(url);
+    if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
   }
 
   const s = StyleSheet.create({
