@@ -59,7 +59,7 @@ export default function HolidaysScreen() {
       }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); setNewDate(""); setNewEndDate(""); setNewName(""); },
-    onError: () => { if (typeof window !== "undefined") window.alert("Failed to add holiday"); },
+    onError: () => { if (typeof window !== "undefined") Alert.alert("Notice", String("Failed to add holiday")); },
   });
 
   const deleteMutation = useMutation({
@@ -199,7 +199,7 @@ export default function HolidaysScreen() {
                 </View>
                 {!isPublicView && <TouchableOpacity onPress={() => {
                   const confirmed = typeof window !== "undefined"
-                    ? window.confirm(`Remove "${h.name}" (${new Date(h.date+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})})?`)
+                    ? (Platform.OS === "web" ? window.confirm(`Remove "${h.name}" (${new Date(h.date+"T00:00:00") : true).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})})?`)
                     : true;
                   if (confirmed) deleteMutation.mutate(h.id);
                 }}>

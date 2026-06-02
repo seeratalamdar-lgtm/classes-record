@@ -140,7 +140,7 @@ export default function StudentsScreen() {
       : (allStudents || []).filter((s: any) => s.className === selectedClass);
     if (!studs.length) { setError("No students to delete"); return; }
     const label = isAllSections ? "ALL sections of " + selectedKey : selectedClass;
-    if (!Platform.OS === "web" ? Platform.OS === "web" && window.confirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.")) : false return;
+    if (!Platform.OS === "web" ? Platform.OS === "web" && (Platform.OS === "web" ? window.confirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.") : true)) : false return;
     setDeleteAllLoading(true);
     for (const s of studs) {
       await deleteStudent(s.id).catch(() => {});
@@ -175,39 +175,7 @@ export default function StudentsScreen() {
     if (!selectedClass) { setError("Select a class first"); return; }
     if (typeof window === "undefined") return;
     // Use native file input for reliable web upload
-    const input = document.createElement("input");
-    input.type = "file";
-    input.accept = ".csv,.txt";
-    input.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      setBulkLoading(true); setError("");
-      try {
-        const csvText = await file.text();
-        const allLines = csvText.split("\n").map((l: string) => l.replace("\r","")).filter((l: string) => l.trim());
-        if (allLines.length < 2) { setBulkLoading(false); setError("CSV file is empty or invalid"); return; }
-        const headers = allLines[0].split(",").map((h: string) => h.trim().replace(/^"|"$/g, ""));
-        const rows = allLines.slice(1).map((line: string) => {
-          const vals = line.split(",").map((v: string) => v.trim().replace(/^"|"$/g, ""));
-          const obj: Record<string,string> = {};
-          headers.forEach((h: string, i: number) => { obj[h] = vals[i] || ""; });
-          return obj;
-        }).filter((r: any) => Object.values(r).some((v: any) => v));
-        const API = "https://" + window.location.hostname + "/api";
-        const res = await fetch(API + "/import/students/csv", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ rows, scheduleId, className: selectedSubjectFilter !== "All" ? selectedClass : (sectionSubjectList.length > 0 ? sectionSubjectList[0].split(" · ")[0] : selectedKey) })
-        }).then(r => r.json());
-        setBulkLoading(false);
-        if (res.inserted >= 0) {
-          alert("Uploaded: " + res.inserted + " students inserted, " + res.skipped + " skipped.");
-          qc.invalidateQueries({ queryKey: ["students", scheduleId, selectedClass] });
-          qc.invalidateQueries({ queryKey: ["students-all", scheduleId] });
-        } else { setError(res.error || "Upload failed"); }
-      } catch(err: any) { setBulkLoading(false); setError("Upload error: " + err.message); }
-    };
-    input.click();
+    if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; } const input = document.createElement("input"); input.type = "file"; input.click();
   }
 
   function downloadClassStudents(className: string) {

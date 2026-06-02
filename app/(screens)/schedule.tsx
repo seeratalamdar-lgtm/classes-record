@@ -293,18 +293,18 @@ export default function ScheduleScreen() {
       if (result.success || result.imported || result.inserted) {
         qc.invalidateQueries({ queryKey: ["schedule", scheduleId] });
         setShowOverride(false);
-        Platform.OS === "web" ? window.alert("Override complete! " + (result.imported || result.inserted || 0) + " entries updated. Past attendance preserved.") : Alert.alert("Notice", String("Override complete! " + (result.imported || result.inserted || 0) + " entries updated. Past attendance preserved."));
+        Platform.OS === "web" ? Alert.alert("Notice", String("Override complete! " + (result.imported || result.inserted || 0)) + " entries updated. Past attendance preserved.") : Alert.alert("Notice", String("Override complete! " + (result.imported || result.inserted || 0) + " entries updated. Past attendance preserved."));
       } else {
         throw new Error(result.error || "Import failed");
       }
     } catch(e) {
-      Platform.OS === "web" ? window.alert("Override failed: " + e.message) : Alert.alert("Notice", String("Override failed: " + e.message));
+      Platform.OS === "web" ? Alert.alert("Notice", String("Override failed: " + e.message)) : Alert.alert("Notice", String("Override failed: " + e.message));
     }
     setOverrideLoading(false);
   }
 
   async function handleBulkImport() {
-    if (!bulkDate) { Platform.OS === "web" ? window.alert("Please select a date.") : Alert.alert("Notice", String("Please select a date.")); return; }
+    if (!bulkDate) { Platform.OS === "web" ? Alert.alert("Notice", String("Please select a date.")) : Alert.alert("Notice", String("Please select a date.")); return; }
     setBulkLoading(true); setBulkResult("");
     try {
       const res = await fetch("https://" + domain + "/api/schedule/bulk-day-import", {
@@ -318,7 +318,7 @@ export default function ScheduleScreen() {
       const msg = `✅ ${data.inserted} entries imported as ${bulkType.charAt(0).toUpperCase()+bulkType.slice(1)} for ${bulkDate} (${dayLabel}). Total scheduled: ${data.total}.`;
       setBulkResult(msg);
       setTimeout(() => { setShowBulkImport(false); setBulkResult(""); refetch(); }, 2500);
-    } catch(e) { Platform.OS === "web" ? window.alert("Import failed: " + e.message) : Alert.alert("Notice", String("Import failed: " + e.message)); }
+    } catch(e) { Platform.OS === "web" ? Alert.alert("Notice", String("Import failed: " + e.message)) : Alert.alert("Notice", String("Import failed: " + e.message)); }
     setBulkLoading(false);
   }
 
@@ -701,7 +701,7 @@ export default function ScheduleScreen() {
                               if (clipboard && scheduleId && !isPublicView) {
                                 const h = slot.hour;
                                 const fmt2 = (n: number) => { const h12 = n % 12 || 12; const ap = n >= 12 ? "PM" : "AM"; return (h12 < 10 ? "0" : "") + h12 + ":00 " + ap; };
-                                addScheduleEntry({ faculty: clipboard.Faculty, subject: clipboard.Subject, className: clipboard.Class, dept: clipboard.Deptt || "", day: d, location: clipboard.Location || "", timeStart: fmt2(h), timeEnd: fmt2(h+1), lecLab: clipboard.LecLab || "Lec", elective: clipboard.Elective || "", userEmail: "", scheduleId }).then(() => { qc.invalidateQueries({ queryKey: ["schedule", scheduleId] }); qc.refetchQueries({ queryKey: ["schedule", scheduleId] }); if (typeof window !== "undefined") Platform.OS === "web" ? window.alert("✓ Pasted to " + d + " " + fmt2(h)); }) : Alert.alert("Notice", String("✓ Pasted to " + d + " " + fmt2(h)); }));
+                                addScheduleEntry({ faculty: clipboard.Faculty, subject: clipboard.Subject, className: clipboard.Class, dept: clipboard.Deptt || "", day: d, location: clipboard.Location || "", timeStart: fmt2(h), timeEnd: fmt2(h+1), lecLab: clipboard.LecLab || "Lec", elective: clipboard.Elective || "", userEmail: "", scheduleId }).then(() => { qc.invalidateQueries({ queryKey: ["schedule", scheduleId] }); qc.refetchQueries({ queryKey: ["schedule", scheduleId] }); if (typeof window !== "undefined") Platform.OS === "web" ? Alert.alert("Notice", String("✓ Pasted to " + d + " " + fmt2(h))); }) : Alert.alert("Notice", String("✓ Pasted to " + d + " " + fmt2(h)); }));
                               }
                             }}>
                               <Text style={[s.freeDash, clipboard && scheduleId && !isPublicView ? { color: colors.primary, fontSize: 14 } : {}]}>{clipboard && scheduleId && !isPublicView ? "＋" : "—"}</Text>
@@ -715,10 +715,10 @@ export default function ScheduleScreen() {
                                 editMode={editMode}
                                 onCopy={scheduleId && !isPublicView ? () => {
                                   if (clipboard?.id === r.id) { setClipboard(null); }
-                                  else { setClipboard(r); if (typeof window !== "undefined") Platform.OS === "web" ? window.alert("📋 Copied: " + r.Subject + " · " + r.Class) : Alert.alert("Notice", String("📋 Copied: " + r.Subject + " · " + r.Class)); }
+                                  else { setClipboard(r); if (typeof window !== "undefined") Platform.OS === "web" ? Alert.alert("Notice", String("📋 Copied: " + r.Subject + " · " + r.Class)) : Alert.alert("Notice", String("📋 Copied: " + r.Subject + " · " + r.Class)); }
                                 } : undefined}
                                 onDelete={scheduleId && !isPublicView ? () => {
-                                  if (typeof window !== "undefined" && Platform.OS === "web" && window.confirm("Delete " + r.Subject + " from " + (r.Day || "") + "?")) {
+                                  if (typeof window !== "undefined" && Platform.OS === "web" && (Platform.OS === "web" ? window.confirm("Delete " + r.Subject + " from " + (r.Day || "") : true) + "?")) {
                                     deleteMutation.mutate(r.id!);
                                   }
                                 } : undefined}
