@@ -1,0 +1,239 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React from "react";
+import {
+  View, Text, StyleSheet, TouchableOpacity, ScrollView, Platform,
+  ActivityIndicator,
+} from "react-native";
+import { useRouter } from "expo-router";
+
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useQuery } from "@tanstack/react-query";
+
+import { useColors } from "@/hooks/useColors";
+import { Feather } from "@expo/vector-icons";
+import { fetchPublicSchedules } from "@/hooks/useApi";
+
+const TILES = [
+  { route: "/(screens)/my-schedules",  emoji: "🔒", title: "My Schedules",         subtitle: "Schedule · Attendance · Summary", color: "#880E4F", bg: "#FCE4EC" },
+  { route: "/(screens)/faculty-portal",emoji: "👤", title: "Faculty Sign In",      subtitle: "Attendance · Exam marks",     color: "#004D40", bg: "#E0F2F1" },
+  { route: "/(screens)/student-portal", emoji: "🎓", title: "Student Sign In",      subtitle: "Attendance · Marks · Profile", color: "#0D47A1", bg: "#BBDEFB" },
+  { route: "/(screens)/finance",       emoji: "💰", title: "Account & Finance",    subtitle: "Fees · Salary · Payments",    color: "#E65100", bg: "#FFE0B2" },
+  { route: "/(screens)/admin-panel",   emoji: "🛡️", title: "Admin Panel",          subtitle: "Users · Passwords · CSV",     color: "#311B92", bg: "#D1C4E9" },
+  { route: "/(screens)/tutorial",      emoji: "📖", title: "Tutorial",             subtitle: "Guide · Examples · PDF",      color: "#1A237E", bg: "#C5CAE9" },
+  { route: "/(screens)/contact",       emoji: "📞", title: "Contact Us",           subtitle: "Alamdar Hussain · Islamabad", color: "#0D47A1", bg: "#BBDEFB" },
+];
+
+export default function DashboardScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  const [mounted, setMounted] = React.useState(false);
+  React.useEffect(() => { const t = setTimeout(() => setMounted(true), 2000); return () => clearTimeout(t); }, []);
+  const { data: publicSchedules = [], isLoading: pubLoading } = useQuery({
+    queryKey: ["publicSchedules"],
+    queryFn: fetchPublicSchedules,
+    enabled: mounted,
+  });
+
+  const s = StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: {
+      backgroundColor: colors.primary,
+      paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16),
+      paddingBottom: 24,
+      paddingHorizontal: 20,
+    },
+    appName: {
+      color: "#fff",
+      fontSize: 28,
+      fontFamily: "Inter_700Bold",
+      letterSpacing: 0.5,
+    },
+    appSub: {
+      color: "rgba(255,255,255,0.75)",
+      fontSize: 14,
+      fontFamily: "Inter_400Regular",
+      marginTop: 4,
+    },
+    scroll: { flex: 1 },
+    grid: {
+      padding: 16,
+      flexDirection: "row",
+      flexWrap: "wrap",
+      gap: 14,
+    },
+    tile: {
+      width: "47%",
+      borderRadius: 20,
+      padding: 16,
+      borderWidth: 0.5,
+      borderColor: colors.border,
+      alignItems: "flex-start",
+      backgroundColor: colors.card,
+      shadowColor: "#2563EB",
+      shadowOffset: { width: 0, height: 4 },
+      shadowOpacity: 0.10,
+      shadowRadius: 12,
+      elevation: 4,
+    },
+    tileWide: {
+      width: "100%",
+    },
+    iconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+    tileTitle: {
+      fontSize: 14,
+      fontFamily: "Inter_600SemiBold",
+      color: colors.foreground,
+      marginBottom: 3,
+    },
+    tileSub: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+    sectionHeader: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 8,
+      marginHorizontal: 16,
+      marginTop: 8,
+      marginBottom: 10,
+    },
+    sectionTitle: {
+      fontSize: 16,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+    },
+    pubCard: {
+      marginHorizontal: 16,
+      marginBottom: 10,
+      backgroundColor: colors.card,
+      borderRadius: 14,
+      borderWidth: 1.5,
+      borderColor: "#1976D2",
+      padding: 14,
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 12,
+      shadowColor: "#000",
+      shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.05,
+      shadowRadius: 3,
+      elevation: 2,
+    },
+    pubCardIcon: {
+      width: 42,
+      height: 42,
+      borderRadius: 21,
+      backgroundColor: "#E3F2FD",
+      alignItems: "center",
+      justifyContent: "center",
+    },
+    pubCardName: {
+      fontSize: 14,
+      fontFamily: "Inter_700Bold",
+      color: colors.foreground,
+    },
+    pubCardSub: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+      marginTop: 2,
+    },
+    pubEmpty: {
+      marginHorizontal: 16,
+      marginBottom: 12,
+      padding: 14,
+      backgroundColor: colors.muted,
+      borderRadius: 12,
+      alignItems: "center",
+    },
+    pubEmptyTxt: {
+      fontSize: 13,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+    footer: {
+      paddingHorizontal: 20,
+      paddingBottom: insets.bottom + 20,
+      alignItems: "center",
+    },
+    footerTxt: {
+      fontSize: 12,
+      fontFamily: "Inter_400Regular",
+      color: colors.mutedForeground,
+    },
+  });
+
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <Text style={s.appName}>Classes Record</Text>
+        <Text style={s.appSub}>Faculty Management System</Text>
+      </View>
+
+      <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 20 }}>
+        <View style={s.grid}>
+          {TILES.map((tile, idx) => {
+            const isLast = idx === TILES.length - 1;
+            return (
+              <TouchableOpacity
+                key={tile.route}
+                style={[s.tile, { backgroundColor: tile.bg }, isLast && s.tileWide]}
+                onPress={() => router.push(tile.route as never)}
+                activeOpacity={0.75}
+              >
+                <View style={[s.iconCircle, { backgroundColor: tile.bg }]}>
+                  <Text style={{ fontSize: 26 }}>{tile.emoji}</Text>
+                </View>
+                <Text style={s.tileTitle}>{tile.title}</Text>
+                <Text style={s.tileSub}>{tile.subtitle}</Text>
+              </TouchableOpacity>
+            );
+          })}
+        </View>
+
+        {/* ── Public Schedules section ── */}
+        <View style={s.sectionHeader}>
+          <Text style={{ fontSize: 18 }}>🌐</Text>
+          <Text style={s.sectionTitle}>Public Schedules</Text>
+        </View>
+
+        {pubLoading ? (
+          <ActivityIndicator color="#1976D2" style={{ marginBottom: 16 }} />
+        ) : publicSchedules.length === 0 ? (
+          <View style={s.pubEmpty}>
+            <Text style={s.pubEmptyTxt}>No public schedules yet</Text>
+          </View>
+        ) : (
+          publicSchedules.map((sch) => (
+            <TouchableOpacity
+              key={sch.id}
+              style={s.pubCard}
+              activeOpacity={0.75}
+              onPress={() =>
+                router.push(
+                  `/(screens)/schedule-dashboard?scheduleId=${sch.id}&scheduleTitle=${encodeURIComponent(sch.name)}&creatorName=${encodeURIComponent(sch.userId)}&isPublic=1&startDate=${sch.startDate ?? ""}&endDate=${sch.endDate ?? ""}` as never
+                )
+              }
+            >
+              <View style={s.pubCardIcon}>
+                <Text style={{ fontSize: 20 }}>🌐</Text>
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={s.pubCardName}>{sch.name}</Text>
+                <Text style={s.pubCardSub}>by {sch.userId}</Text>
+              </View>
+              <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          ))
+        )}
+      </ScrollView>
+
+      <View style={s.footer}>
+        <Text style={s.footerTxt}>Tap a tile to open the screen</Text>
+      </View>
+    </View>
+  );
+}

@@ -1,0 +1,647 @@
+import { MaterialCommunityIcons } from "@expo/vector-icons";
+import React, { useState, useEffect, useCallback } from "react";
+import {
+  View, Text, StyleSheet, TouchableOpacity, TextInput,
+  ActivityIndicator, Alert, Modal, ScrollView, Platform,
+} from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter, useFocusEffect } from "expo-router";
+import * as ScreenOrientation from "expo-screen-orientation";
+
+import { useColors } from "@/hooks/useColors";
+import { facultyLogin, changeFacultyPassword, FacultySession } from "@/hooks/useApi";
+
+const SESSION_KEY = "facultySession";
+
+export default function FacultyPortalScreen() {
+  const colors = useColors();
+  const insets = useSafeAreaInsets();
+  const router = useRouter();
+
+  useFocusEffect(useCallback(() => {
+    if (Platform.OS !== "web")
+      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+  }, []));
+
+  const [session, setSession] = useState<FacultySession | null>(null);
+  const [showNotes, setShowNotes] = useState(false);
+  const [notes, setNotes] = useState<any[]>([]);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState("");
+  const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online"}/api`;
+
+  async function loadNotes() {
+    if (!session) return;
+    setNotesLoading(true);
+    try {
+      const r = await fetch(`${API_BASE}/notes?facultyName=${encodeURIComponent(session.facultyName)}&scheduleId=${session.scheduleId}`);
+      const data = await r.json();
+      setNotes(Array.isArray(data) ? data : []);
+    } catch(e) { setNotes([]); }
+    setNotesLoading(false);
+  }
+
+  async function handleUploadNote() {
+    if (typeof window === "undefined" || !session) return;
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.ppt,.pptx";
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        window.alert("File too large. Max 10MB per file.");
+        return;
+      }
+      setUploadProgress("Uploading...");
+      const reader = new FileReader();
+      reader.onload = async (ev: any) => {
+        const base64 = ev.target.result.split(",")[1];
+        try {
+          const r = await fetch(`${API_BASE}/notes/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              facultyName: session.facultyName,
+              scheduleId: session.scheduleId,
+              fileName: file.name,
+              fileType: file.type,
+              fileData: base64,
+            }),
+          });
+          const data = await r.json();
+          if (data.error) {
+            window.alert(data.error);
+          } else {
+            setUploadProgress(`Uploaded! Used: ${Math.round(data.usedBytes/1024)}KB of 2048KB`);
+            loadNotes();
+            setTimeout(() => setUploadProgress(""), 3000);
+          }
+        } catch(err) {
+          window.alert("Upload failed");
+          setUploadProgress("");
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+
+  async function handleDeleteNote(id: number, name: string) {
+    if (typeof window === "undefined") return;
+    if (!window.confirm("Delete " + name + "?")) return;
+    await fetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
+    loadNotes();
+  }
+
+  function handleDownloadNote(id: number) {
+    window.open(`${API_BASE}/notes/${id}/download`, "_blank");
+  }
+  const [loading, setLoading] = useState(true);
+  const [photoUri, setPhotoUri] = useState<string | null>(null);
+  const PHOTO_KEY = "FACULTY_PORTAL_PHOTO_";
+
+  React.useEffect(() => {
+    if (session?.username && typeof window !== "undefined") {
+      const p = localStorage.getItem(PHOTO_KEY + session.username);
+      if (p) setPhotoUri(p);
+    }
+  }, [session?.username]);
+
+  function handlePhotoChange() {
+    if (typeof window === "undefined" || !session) return;
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "image/*";
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 1024 * 1024) { window.alert("Photo must be less than 1 MB"); return; }
+      const reader = new FileReader();
+      reader.onload = (ev: any) => {
+        const img = document.createElement("img");
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX = 300; let w = img.width, h = img.height;
+          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL("image/jpeg", 0.7);
+          setPhotoUri(compressed);
+          localStorage.setItem(PHOTO_KEY + session.username, compressed);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
+  }
+  const [schedDates, setSchedDates] = useState<{startDate:string,endDate:string}|null>(null);
+
+  // Fetch schedule dates from server when session lacks them (hooks must be at top level)
+  useEffect(() => {
+    if (session && !session.startDate && session.scheduleId) {
+      const domain = process.env.EXPO_PUBLIC_DOMAIN || "classes-record.onrender.com";
+      fetch(`https://${domain}/api/schedule-dates?scheduleId=${session.scheduleId}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d?.startDate) setSchedDates({ startDate: d.startDate, endDate: d.endDate || "" }); })
+        .catch(() => {});
+    }
+  }, [session?.scheduleId, session?.startDate]);
+
+  // Login form
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [showPass, setShowPass] = useState(false);
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState("");
+
+  // Schedule picker (when username matches multiple schedules)
+  const [scheduleOptions, setScheduleOptions] = useState<FacultySession[]>([]);
+  const [showSchedulePicker, setShowSchedulePicker] = useState(false);
+
+  // Change password
+  const [showChangePass, setShowChangePass] = useState(false);
+  const [curPass, setCurPass] = useState("");
+  const [newPass, setNewPass] = useState("");
+  const [confirmPass, setConfirmPass] = useState("");
+  const [changingPass, setChangingPass] = useState(false);
+
+  useEffect(() => {
+    AsyncStorage.getItem(SESSION_KEY).then(async raw => {
+      if (raw) {
+        try {
+          const saved = JSON.parse(raw);
+          setSession(saved);
+          // Refresh session from server to get latest startDate/endDate
+          if (saved.username && saved.password) {
+            // Can't refresh without password - just use saved session
+          } else if (saved.username) {
+            // Try to get fresh schedule dates via schedule lookup
+            try {
+              const API = process.env.EXPO_PUBLIC_DOMAIN
+                ? "https://" + process.env.EXPO_PUBLIC_DOMAIN + "/api"
+                : "https://classes-record.onrender.com/api";
+              const r = await fetch(`${API}/schedules?username=patoprincipalseecs@gmail.com`);
+              if (r.ok) {
+                const schedules = await r.json();
+                const sched = Array.isArray(schedules) ? schedules.find((s: any) => s.id === saved.scheduleId) : null;
+                if (sched && (sched.startDate || sched.endDate)) {
+                  const updated = { ...saved, startDate: sched.startDate, endDate: sched.endDate, scheduleTitle: sched.name || saved.scheduleTitle };
+                  await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+                  setSession(updated);
+                }
+              }
+            } catch { /* ignore refresh error */ }
+          }
+        } catch { /* ignore */ }
+      }
+      setLoading(false);
+    });
+  }, []);
+
+  async function handleLogin() {
+    if (!username.trim() || !password.trim()) {
+      setLoginError("Enter username and password");
+        return;
+    }
+    setLoginLoading(true);
+    setLoginError("");
+    try {
+      const res = await facultyLogin(username.trim().toLowerCase(), password.trim());
+      if (!res.success) {
+        setLoginError(res.message ?? "Login failed");
+        return;
+      }
+      const results = res.sessions ?? [];
+      if (results.length === 1) {
+        await saveSession(results[0]);
+      } else {
+        setScheduleOptions(results);
+        setShowSchedulePicker(true);
+      }
+    } catch (e: unknown) {
+      setLoginError((e as Error).message ?? "Login failed");
+    } finally {
+      setLoginLoading(false);
+    }
+  }
+
+  async function saveSession(s: FacultySession) {
+    await AsyncStorage.setItem(SESSION_KEY, JSON.stringify(s));
+    setSession(s);
+    setShowSchedulePicker(false);
+    setUsername("");
+    setPassword("");
+  }
+
+  async function handleSignOut() {
+    const confirmed = typeof window !== "undefined"
+      ? window.confirm("Sign out of faculty portal?")
+      : true;
+    if (confirmed) {
+      await AsyncStorage.removeItem(SESSION_KEY);
+      setSession(null);
+    }
+  }
+
+  async function handleChangePassword() {
+    if (!newPass.trim() || !curPass.trim()) { if (typeof window !== "undefined") window.alert("⚠️ Fill in all fields."); else Alert.alert("Error", "Fill in all fields"); return; }
+    if (newPass.length < 6) { if (typeof window !== "undefined") window.alert("⚠️ New password must be at least 6 characters"); else Alert.alert("Error", "Too short"); return; }
+    if (newPass !== confirmPass) { if (typeof window !== "undefined") window.alert("⚠️ New passwords do not match"); else Alert.alert("Error", "Mismatch"); return; }
+    if (!session) return;
+    setChangingPass(true);
+    const r = await changeFacultyPassword(session.username, curPass, newPass);
+    setChangingPass(false);
+    if (r.success) {
+      if (typeof window !== "undefined") window.alert("✅ Password changed successfully!"); else Alert.alert("Success", "Password changed");
+      setShowChangePass(false);
+      setCurPass(""); setNewPass(""); setConfirmPass("");
+    } else {
+      Alert.alert("Error", r.error ?? "Could not change password");
+    }
+  }
+
+  const s = StyleSheet.create({
+    container: { flex: 1, backgroundColor: colors.background },
+    header: {
+      backgroundColor: colors.primary,
+      paddingTop: insets.top + (Platform.OS === "web" ? 67 : 16),
+      paddingBottom: 24, paddingHorizontal: 20,
+    },
+    headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
+    homeBtn: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20,
+      paddingHorizontal: 12, paddingVertical: 6,
+    },
+    homeBtnTxt: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+    signOutBtn: {
+      flexDirection: "row", alignItems: "center", gap: 5,
+      backgroundColor: "rgba(255,255,255,0.2)", borderRadius: 20,
+      paddingHorizontal: 12, paddingVertical: 6,
+    },
+    signOutTxt: { color: "#fff", fontSize: 13, fontFamily: "Inter_600SemiBold" },
+    headerTitle: { color: "#fff", fontSize: 24, fontFamily: "Inter_700Bold" },
+    headerSub: { color: "rgba(255,255,255,0.8)", fontSize: 13, fontFamily: "Inter_400Regular", marginTop: 3 },
+    headerBadge: {
+      flexDirection: "row", alignItems: "center", gap: 6,
+      backgroundColor: "rgba(255,255,255,0.15)", borderRadius: 12,
+      paddingHorizontal: 10, paddingVertical: 5, marginTop: 8, alignSelf: "flex-start",
+    },
+    headerBadgeTxt: { color: "#fff", fontSize: 12, fontFamily: "Inter_400Regular" },
+
+    // Login form
+    loginCard: {
+      margin: 20, backgroundColor: colors.card, borderRadius: 16,
+      borderWidth: 1, borderColor: colors.border, padding: 24, gap: 16,
+    },
+    loginTitle: { fontSize: 18, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center" },
+    loginSub: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center", marginTop: -8 },
+    inputRow: {
+      flexDirection: "row", alignItems: "center",
+      backgroundColor: colors.muted, borderRadius: 10,
+      borderWidth: 1, borderColor: colors.border,
+      paddingHorizontal: 12, paddingVertical: 10, gap: 10,
+    },
+    input: { flex: 1, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground },
+    loginBtn: {
+      backgroundColor: colors.primary, borderRadius: 10,
+      paddingVertical: 14, alignItems: "center",
+    },
+    loginBtnTxt: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+    errorTxt: { fontSize: 13, fontFamily: "Inter_400Regular", color: colors.destructive, textAlign: "center" },
+
+    // Tiles (faculty dashboard)
+    grid: { padding: 16, flexDirection: "row", flexWrap: "wrap", gap: 14 },
+    tile: {
+      width: "47%", borderRadius: 16, padding: 20,
+      borderWidth: 1, borderColor: colors.border, alignItems: "flex-start",
+      shadowColor: "#000", shadowOffset: { width: 0, height: 1 },
+      shadowOpacity: 0.06, shadowRadius: 4, elevation: 2,
+    },
+    iconCircle: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 10 },
+    tileTitle: { fontSize: 15, fontFamily: "Inter_700Bold", color: colors.foreground, marginBottom: 4 },
+    tileSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+
+    // Change password
+    changePassBtn: {
+      marginHorizontal: 16, marginBottom: 10,
+      flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7,
+      backgroundColor: colors.muted, borderRadius: 10, borderWidth: 1, borderColor: colors.border,
+      paddingVertical: 11,
+    },
+    changePassBtnTxt: { fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.mutedForeground },
+
+    // Modal
+    overlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", alignItems: "center", padding: 24 },
+    modalBox: { backgroundColor: colors.card, borderRadius: 16, width: "100%", padding: 20, gap: 14 },
+    modalTitle: { fontSize: 17, fontFamily: "Inter_700Bold", color: colors.foreground, textAlign: "center" },
+    modalBtn: { backgroundColor: colors.primary, borderRadius: 10, paddingVertical: 13, alignItems: "center" },
+    modalBtnTxt: { color: "#fff", fontSize: 15, fontFamily: "Inter_700Bold" },
+    modalCancelTxt: { fontSize: 14, fontFamily: "Inter_400Regular", color: colors.mutedForeground, textAlign: "center" },
+    schOption: {
+      flexDirection: "row", alignItems: "center", padding: 14,
+      backgroundColor: colors.muted, borderRadius: 10, gap: 10,
+    },
+    schOptionTxt: { flex: 1, fontSize: 14, fontFamily: "Inter_600SemiBold", color: colors.foreground },
+    schOptionSub: { fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground },
+  });
+
+  if (loading) {
+    return (
+      <View style={[s.container, { justifyContent: "center", alignItems: "center" }]}>
+        <ActivityIndicator color={colors.primary} size="large" />
+      </View>
+    );
+  }
+
+  // ── Logged in: faculty dashboard ──
+  if (session) {
+    const sd = session.startDate || schedDates?.startDate || "";
+    const ed = session.endDate || schedDates?.endDate || "";
+    const q = `scheduleId=${session.scheduleId}&scheduleTitle=${encodeURIComponent(session.scheduleTitle || session.scheduleName || "")}${sd ? `&startDate=${sd}&endDate=${ed}` : ""}&facultyName=${encodeURIComponent(session.facultyName)}`;
+
+    return (
+      <View style={s.container}>
+        <View style={s.header}>
+          <View style={s.headerRow}>
+            <TouchableOpacity style={s.homeBtn} onPress={() => router.replace("/" as never)}>
+              <Feather name="home" size={13} color="#fff" />
+              <Text style={s.homeBtnTxt}>Home</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
+              <Feather name="log-out" size={13} color="#fff" />
+              <Text style={s.signOutTxt}>Sign Out</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 4 }}>
+            <TouchableOpacity onPress={handlePhotoChange} style={{ position: "relative" }}>
+              <View style={{ width: 56, height: 56, borderRadius: 28, backgroundColor: "rgba(255,255,255,0.25)", alignItems: "center", justifyContent: "center", borderWidth: 2, borderColor: "rgba(255,255,255,0.5)", overflow: "hidden" }}>
+                {photoUri ? <Image source={{ uri: photoUri }} style={{ width: 56, height: 56, borderRadius: 28 }} /> : <Feather name="user" size={24} color="rgba(255,255,255,0.8)" />}
+              </View>
+              <View style={{ position: "absolute", bottom: 0, right: 0, backgroundColor: "#1565C0", borderRadius: 10, padding: 3, borderWidth: 1, borderColor: "#fff" }}>
+                <Feather name="camera" size={9} color="#fff" />
+              </View>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <Text style={s.headerTitle}>{session.facultyName}</Text>
+              <Text style={s.headerSub}>{session.scheduleTitle}</Text>
+            </View>
+          </View>
+          <View style={s.headerBadge}>
+            <Feather name="user" size={12} color="#fff" />
+            <Text style={s.headerBadgeTxt}>Logged in as {session.username}</Text>
+          </View>
+        </View>
+
+        <ScrollView contentContainerStyle={{ paddingBottom: 32 }}>
+          <View style={[s.grid, { flexWrap: "wrap" }]}>
+            <TouchableOpacity
+              style={[s.tile, { backgroundColor: "#E3F2FD", width: "47%" }]}
+              onPress={() => router.push(`/(screens)/attendance?${q}` as never)}
+              activeOpacity={0.75}
+            >
+              <View style={[s.iconCircle, { backgroundColor: "#1565C022" }]}>
+                <Feather name="check-square" size={26} color="#1565C0" />
+              </View>
+              <Text style={s.tileTitle}>Attendance</Text>
+              <Text style={s.tileSub}>Mark · Roster</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.tile, { backgroundColor: "#F3E5F5", width: "47%" }]}
+              onPress={() => router.push(`/(screens)/exam?${q}` as never)}
+              activeOpacity={0.75}
+            >
+              <View style={[s.iconCircle, { backgroundColor: "#6A1B9A22" }]}>
+                <Feather name="award" size={26} color="#6A1B9A" />
+              </View>
+              <Text style={s.tileTitle}>Exam Marks</Text>
+              <Text style={s.tileSub}>Enter · View</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[s.tile, { backgroundColor: "#E1F5FE", width: "47%" }]}
+              onPress={() => router.push(`/(screens)/schedule-dashboard?scheduleId=${session.scheduleId}&scheduleTitle=${encodeURIComponent(session.scheduleTitle || session.scheduleName || "")}&isPublic=1&creatorName=${encodeURIComponent(session.scheduleTitle || session.scheduleName || "")}` as never)}
+              activeOpacity={0.75}
+            >
+              <View style={[s.iconCircle, { backgroundColor: "#0277BD22" }]}>
+                <Feather name="calendar" size={26} color="#0277BD" />
+              </View>
+              <Text style={s.tileTitle}>My Schedule</Text>
+              <Text style={s.tileSub}>View Timetable</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Notes tile */}
+          <TouchableOpacity
+            style={[s.tile, { backgroundColor: "#E8F5E9", width: "92%", alignSelf: "center", flexDirection: "row", alignItems: "center", marginBottom: 12 }]}
+            onPress={() => { setShowNotes(true); loadNotes(); }}
+            activeOpacity={0.75}
+          >
+            <View style={[s.iconCircle, { backgroundColor: "#2E7D3222", marginRight: 14 }]}>
+              <Feather name="folder" size={26} color="#2E7D32" />
+            </View>
+            <View>
+              <Text style={s.tileTitle}>My Notes</Text>
+              <Text style={s.tileSub}>Upload · Share with Students</Text>
+            </View>
+          </TouchableOpacity>
+
+          <Modal visible={showNotes} animationType="slide" onRequestClose={() => setShowNotes(false)}>
+            <View style={{ flex: 1, backgroundColor: "#F8FAFC" }}>
+              <View style={{ backgroundColor: "#1565C0", paddingTop: 48, paddingBottom: 16, paddingHorizontal: 16 }}>
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                  <TouchableOpacity onPress={() => setShowNotes(false)} style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Feather name="arrow-left" size={18} color="#fff" />
+                    <Text style={{ color: "#fff", fontSize: 14, fontFamily: "Inter_600SemiBold" }}>Back</Text>
+                  </TouchableOpacity>
+                  <Text style={{ color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" }}>My Notes</Text>
+                  <TouchableOpacity onPress={handleUploadNote} style={{ backgroundColor: "#fff", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 6, flexDirection: "row", alignItems: "center", gap: 6 }}>
+                    <Feather name="upload" size={14} color="#1565C0" />
+                    <Text style={{ color: "#1565C0", fontSize: 13, fontFamily: "Inter_600SemiBold" }}>Upload</Text>
+                  </TouchableOpacity>
+                </View>
+                <Text style={{ color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 8, fontFamily: "Inter_400Regular" }}>
+                  {session?.facultyName} · Max 10MB total storage
+                </Text>
+                {uploadProgress ? <Text style={{ color: "#A5D6A7", fontSize: 12, marginTop: 4, fontFamily: "Inter_600SemiBold" }}>{uploadProgress}</Text> : null}
+              </View>
+              <ScrollView style={{ flex: 1, padding: 16 }}>
+                {notesLoading ? <ActivityIndicator color="#1565C0" style={{ marginTop: 40 }} /> :
+                  notes.length === 0 ? (
+                    <View style={{ alignItems: "center", marginTop: 60 }}>
+                      <Feather name="folder" size={48} color="#CBD5E1" />
+                      <Text style={{ color: "#94A3B8", marginTop: 12, fontSize: 15, fontFamily: "Inter_400Regular" }}>No notes yet</Text>
+                      <Text style={{ color: "#CBD5E1", marginTop: 4, fontSize: 13, fontFamily: "Inter_400Regular" }}>Tap Upload to add PDF, Word, Excel or images</Text>
+                    </View>
+                  ) : notes.map((n: any) => (
+                    <View key={n.id} style={{ backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10, flexDirection: "row", alignItems: "center", shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 4, shadowOffset: { width: 0, height: 2 } }}>
+                      <View style={{ width: 40, height: 40, borderRadius: 10, backgroundColor: "#E3F2FD", alignItems: "center", justifyContent: "center", marginRight: 12 }}>
+                        <Feather name={n.file_name?.endsWith(".pdf") ? "file-text" : n.file_name?.match(/png|jpg|jpeg/i) ? "image" : "file"} size={20} color="#1565C0" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#0F172A" }} numberOfLines={1}>{n.file_name}</Text>
+                        <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: "#94A3B8", marginTop: 2 }}>{Math.round(n.file_size/1024)}KB · {new Date(n.uploaded_at).toLocaleDateString()}</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleDownloadNote(n.id)} style={{ padding: 8, backgroundColor: "#E3F2FD", borderRadius: 8, marginRight: 6 }}>
+                        <Feather name="download" size={16} color="#1565C0" />
+                      </TouchableOpacity>
+                      <TouchableOpacity onPress={() => handleDeleteNote(n.id, n.file_name)} style={{ padding: 8, backgroundColor: "#FFEBEE", borderRadius: 8 }}>
+                        <Feather name="trash-2" size={16} color="#C62828" />
+                      </TouchableOpacity>
+                    </View>
+                  ))
+                }
+              </ScrollView>
+            </View>
+          </Modal>
+
+          <TouchableOpacity
+            style={s.changePassBtn}
+            onPress={() => { setShowChangePass(true); setCurPass(""); setNewPass(""); setConfirmPass(""); }}
+          >
+            <Feather name="lock" size={15} color={colors.mutedForeground} />
+            <Text style={s.changePassBtnTxt}>Change My Password</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Change password modal */}
+        <Modal visible={showChangePass} transparent animationType="slide">
+          <View style={s.overlay}>
+            <View style={s.modalBox}>
+              <Text style={s.modalTitle}>Change Password</Text>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.mutedForeground} />
+                <TextInput
+                  style={s.input} placeholder="Current password"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={curPass} onChangeText={setCurPass}
+                  secureTextEntry autoCapitalize="none"
+                />
+              </View>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.mutedForeground} />
+                <TextInput
+                  style={s.input} placeholder="New password (min 6 chars)"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={newPass} onChangeText={setNewPass}
+                  secureTextEntry autoCapitalize="none"
+                />
+              </View>
+              <View style={s.inputRow}>
+                <Feather name="lock" size={16} color={colors.mutedForeground} />
+                <TextInput
+                  style={s.input} placeholder="Confirm new password"
+                  placeholderTextColor={colors.mutedForeground}
+                  value={confirmPass} onChangeText={setConfirmPass}
+                  secureTextEntry autoCapitalize="none"
+                />
+              </View>
+              <TouchableOpacity style={s.modalBtn} onPress={handleChangePassword} disabled={changingPass}>
+                {changingPass
+                  ? <ActivityIndicator color="#fff" size="small" />
+                  : <Text style={s.modalBtnTxt}>Change Password</Text>
+                }
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowChangePass(false)}>
+                <Text style={s.modalCancelTxt}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+      </View>
+    );
+  }
+
+  // ── Not logged in: login form ──
+  return (
+    <View style={s.container}>
+      <View style={s.header}>
+        <View style={s.headerRow}>
+          <TouchableOpacity style={s.homeBtn} onPress={() => router.replace("/" as never)}>
+            <Feather name="home" size={13} color="#fff" />
+            <Text style={s.homeBtnTxt}>Home</Text>
+          </TouchableOpacity>
+        </View>
+        <Text style={s.headerTitle}>Faculty Portal</Text>
+        <Text style={s.headerSub}>Sign in with your faculty credentials</Text>
+      </View>
+
+      <ScrollView contentContainerStyle={{ padding: 0 }}>
+        <View style={s.loginCard}>
+          <Text style={s.loginTitle}>Faculty Sign In</Text>
+          <Text style={s.loginSub}>Use the username &amp; password provided by your schedule administrator</Text>
+
+          <View style={s.inputRow}>
+            <Feather name="user" size={16} color={colors.mutedForeground} />
+            <TextInput
+              style={s.input}
+              placeholder="Username (e.g. ahmed.khan)"
+              placeholderTextColor={colors.mutedForeground}
+              value={username}
+              onChangeText={t => { setUsername(t); setLoginError(""); }}
+              autoCapitalize="none"
+              autoCorrect={false}
+            />
+          </View>
+
+          <View style={s.inputRow}>
+            <Feather name="lock" size={16} color={colors.mutedForeground} />
+            <TextInput
+              style={s.input}
+              placeholder="Password"
+              placeholderTextColor={colors.mutedForeground}
+              value={password}
+              onChangeText={t => { setPassword(t); setLoginError(""); }}
+              secureTextEntry={!showPass}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity onPress={() => setShowPass(p => !p)}>
+              <Feather name={showPass ? "eye-off" : "eye"} size={17} color={colors.mutedForeground} />
+            </TouchableOpacity>
+          </View>
+
+          {!!loginError && <Text style={s.errorTxt}>{loginError}</Text>}
+
+          <TouchableOpacity style={s.loginBtn} onPress={handleLogin} disabled={loginLoading}>
+            {loginLoading
+              ? <ActivityIndicator color="#fff" size="small" />
+              : <Text style={s.loginBtnTxt}>Sign In</Text>
+            }
+          </TouchableOpacity>
+        </View>
+      </ScrollView>
+
+      {/* Schedule picker when same username exists in multiple schedules */}
+      <Modal visible={showSchedulePicker} transparent animationType="slide">
+        <View style={s.overlay}>
+          <View style={s.modalBox}>
+            <Text style={s.modalTitle}>Select Schedule</Text>
+            <Text style={[s.modalCancelTxt, { marginBottom: 4 }]}>
+              Your credentials match multiple schedules. Select one to continue.
+            </Text>
+            {scheduleOptions.map(opt => (
+              <TouchableOpacity key={opt.scheduleId} style={s.schOption} onPress={() => saveSession(opt)}>
+                <Feather name="calendar" size={18} color={colors.primary} />
+                <View style={{ flex: 1 }}>
+                  <Text style={s.schOptionTxt}>{opt.scheduleTitle}</Text>
+                  {opt.startDate && (
+                    <Text style={s.schOptionSub}>{opt.startDate} – {opt.endDate ?? "ongoing"}</Text>
+                  )}
+                </View>
+                <Feather name="chevron-right" size={16} color={colors.mutedForeground} />
+              </TouchableOpacity>
+            ))}
+            <TouchableOpacity onPress={() => setShowSchedulePicker(false)}>
+              <Text style={s.modalCancelTxt}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+}

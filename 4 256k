@@ -1,0 +1,10 @@
+                               Table "public.holidays"
+   Column    |  Type   | Collation | Nullable |               Default                
+-------------+---------+-----------+----------+--------------------------------------
+ id          | integer |           | not null | nextval('holidays_id_seq'::regclass)
+ schedule_id | integer |           |          | 
+ date        | date    |           |          | 
+ description | text    |           |          | 
+Indexes:
+    "holidays_pkey" PRIMARY KEY, btree (id)
+

@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "Classes Record",
+    "slug": "classes-record",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/images/icon.png",
+    "scheme": "classes-record",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/images/icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#ffffff"
+    },
+    "ios": {
+      "supportsTablet": false
+    },
+    "android": {
+      "package": "com.seecs.classesrecord",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/images/icon.png",
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "web": {
+      "favicon": "./assets/images/icon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-web-browser",
+      "expo-screen-orientation"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "77aa2e53-3c43-41e1-afec-a092d7677438"
+      }
+    }
+  }
+}

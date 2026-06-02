@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: classes-record-api
+    runtime: node
+    repo: https://github.com/YOUR_USERNAME/Classes-record
+    plan: free
+    buildCommand: cd classes-record-app && npm install
+    startCommand: cd classes-record-app && node server.js
+    envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
