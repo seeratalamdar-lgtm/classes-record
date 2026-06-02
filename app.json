@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "AcadTrack",
-    "slug": "acadtrack",
+    "slug": "classes-record",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
@@ -36,6 +36,7 @@
       "eas": {
         "projectId": "77aa2e53-3c43-41e1-afec-a092d7677438"
       }
-    }
+    },
+    "owner": "alamdar.hussain"
   }
 }
