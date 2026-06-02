@@ -1,6 +1,7 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useEffect, useCallback } from "react";
-import { Linking,
+import {
   View, Text, StyleSheet, TouchableOpacity, TextInput,
   ActivityIndicator, Alert, Modal, ScrollView, Platform,
 } from "react-native";
@@ -45,18 +46,59 @@ export default function FacultyPortalScreen() {
 
   async function handleUploadNote() {
     if (typeof window === "undefined" || !session) return;
-    if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; } const input = document.createElement("input"); input.type = "file"; input.click();
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.ppt,.pptx";
+    input.onchange = async (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 10 * 1024 * 1024) {
+        showAlert("File too large. Max 10MB per file.");
+        return;
+      }
+      setUploadProgress("Uploading...");
+      const reader = new FileReader();
+      reader.onload = async (ev: any) => {
+        const base64 = ev.target.result.split(",")[1];
+        try {
+          const r = await fetch(`${API_BASE}/notes/upload`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              facultyName: session.facultyName,
+              scheduleId: session.scheduleId,
+              fileName: file.name,
+              fileType: file.type,
+              fileData: base64,
+            }),
+          });
+          const data = await r.json();
+          if (data.error) {
+            showAlert(data.error);
+          } else {
+            setUploadProgress(`Uploaded! Used: ${Math.round(data.usedBytes/1024)}KB of 2048KB`);
+            loadNotes();
+            setTimeout(() => setUploadProgress(""), 3000);
+          }
+        } catch(err) {
+          showAlert("Upload failed");
+          setUploadProgress("");
+        }
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
   }
 
   async function handleDeleteNote(id: number, name: string) {
     if (typeof window === "undefined") return;
-    if (!(Platform.OS === "web" ? window.confirm("Delete " + name + "?") : true)) return;
+    if (!showConfirm("Delete " + name + "?")) return;
     await fetch(`${API_BASE}/notes/${id}`, { method: "DELETE" });
     loadNotes();
   }
 
   function handleDownloadNote(id: number) {
-    Linking.openURL(`${API_BASE}/notes/${id}/download`);
+    openURL(`${API_BASE}/notes/${id}/download`);
   }
   const [loading, setLoading] = useState(true);
   const [photoUri, setPhotoUri] = useState<string | null>(null);
@@ -71,7 +113,31 @@ export default function FacultyPortalScreen() {
 
   function handlePhotoChange() {
     if (typeof window === "undefined" || !session) return;
-    if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; } const input = document.createElement("input"); input.type = "file"; input.click();
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = "image/*";
+    input.onchange = (e: any) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      if (file.size > 1024 * 1024) { showAlert("Photo must be less than 1 MB"); return; }
+      const reader = new FileReader();
+      reader.onload = (ev: any) => {
+        const img = document.createElement("img");
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          const MAX = 300; let w = img.width, h = img.height;
+          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
+          if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
+          canvas.width = w; canvas.height = h;
+          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+          const compressed = canvas.toDataURL("image/jpeg", 0.7);
+          setPhotoUri(compressed);
+          localStorage.setItem(PHOTO_KEY + session.username, compressed);
+        };
+        img.src = ev.target.result;
+      };
+      reader.readAsDataURL(file);
+    };
+    input.click();
   }
   const [schedDates, setSchedDates] = useState<{startDate:string,endDate:string}|null>(null);
 
@@ -174,7 +240,7 @@ export default function FacultyPortalScreen() {
 
   async function handleSignOut() {
     const confirmed = typeof window !== "undefined"
-      ? (Platform.OS === "web" ? window.confirm("Sign out of faculty portal?") : true)
+      ? showConfirm("Sign out of faculty portal?")
       : true;
     if (confirmed) {
       await AsyncStorage.removeItem(SESSION_KEY);
@@ -183,15 +249,15 @@ export default function FacultyPortalScreen() {
   }
 
   async function handleChangePassword() {
-    if (!newPass.trim() || !curPass.trim()) { if (typeof window !== "undefined") Alert.alert("Notice", String("⚠️ Fill in all fields.")); else Alert.alert("Error", "Fill in all fields"); return; }
-    if (newPass.length < 6) { if (typeof window !== "undefined") Alert.alert("Notice", String("⚠️ New password must be at least 6 characters")); else Alert.alert("Error", "Too short"); return; }
-    if (newPass !== confirmPass) { if (typeof window !== "undefined") Alert.alert("Notice", String("⚠️ New passwords do not match")); else Alert.alert("Error", "Mismatch"); return; }
+    if (!newPass.trim() || !curPass.trim()) { if (typeof window !== "undefined") showAlert("⚠️ Fill in all fields."); else Alert.alert("Error", "Fill in all fields"); return; }
+    if (newPass.length < 6) { if (typeof window !== "undefined") showAlert("⚠️ New password must be at least 6 characters"); else Alert.alert("Error", "Too short"); return; }
+    if (newPass !== confirmPass) { if (typeof window !== "undefined") showAlert("⚠️ New passwords do not match"); else Alert.alert("Error", "Mismatch"); return; }
     if (!session) return;
     setChangingPass(true);
     const r = await changeFacultyPassword(session.username, curPass, newPass);
     setChangingPass(false);
     if (r.success) {
-      if (typeof window !== "undefined") Alert.alert("Notice", String("✅ Password changed successfully!")); else Alert.alert("Success", "Password changed");
+      if (typeof window !== "undefined") showAlert("✅ Password changed successfully!"); else Alert.alert("Success", "Password changed");
       setShowChangePass(false);
       setCurPass(""); setNewPass(""); setConfirmPass("");
     } else {

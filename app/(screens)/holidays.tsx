@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useCallback } from "react";
 import {
@@ -59,7 +60,7 @@ export default function HolidaysScreen() {
       }
     },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["holidays"] }); setNewDate(""); setNewEndDate(""); setNewName(""); },
-    onError: () => { if (typeof window !== "undefined") Alert.alert("Notice", String("Failed to add holiday")); },
+    onError: () => { if (typeof window !== "undefined") showAlert("Failed to add holiday"); },
   });
 
   const deleteMutation = useMutation({
@@ -198,8 +199,8 @@ export default function HolidaysScreen() {
                   <Text style={s.cardName}>{h.name}</Text>
                 </View>
                 {!isPublicView && <TouchableOpacity onPress={() => {
-                  const confirmed = Platform.OS === "web" 
-                    ? window.confirm(`Remove "${h.name}"?`)
+                  const confirmed = typeof window !== "undefined"
+                    ? showConfirm(`Remove "${h.name}" (${new Date(h.date+"T00:00:00").toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})})?`)
                     : true;
                   if (confirmed) deleteMutation.mutate(h.id);
                 }}>

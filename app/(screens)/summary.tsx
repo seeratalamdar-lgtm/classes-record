@@ -1,18 +1,20 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useCallback } from "react";
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity,
+import {
+  View, Text, StyleSheet, ScrollView, TouchableOpacity,
   TextInput, ActivityIndicator, Platform, Alert,
 } from "react-native";
-import { Alert, useQuery } from "@tanstack/react-query";
-import { Alert, Feather } from "@expo/vector-icons";
-import { Alert, useSafeAreaInsets } from "react-native-safe-area-context";
-import { Alert, useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
+import { useQuery } from "@tanstack/react-query";
+import { Feather } from "@expo/vector-icons";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
 import * as ScreenOrientation from "expo-screen-orientation";
-import { Alert, printOrShareHtml } from "@/utils/printHtml";
+import { printOrShareHtml } from "@/utils/printHtml";
 
-import { Alert, useColors } from "@/hooks/useColors";
-import { Alert, fetchSummary, fetchOptions, SummaryRecord, ScheduleOptions } from "@/hooks/useApi";
-import { Alert, PickerModal } from "@/components/PickerModal";
+import { useColors } from "@/hooks/useColors";
+import { fetchSummary, fetchOptions, SummaryRecord, ScheduleOptions } from "@/hooks/useApi";
+import { PickerModal } from "@/components/PickerModal";
 
 const SEM_START = "2026-01-19";
 
@@ -394,7 +396,10 @@ export default function SummaryScreen() {
               const csv = header + csvRows;
               const blob = new Blob([csv], { type: "text/csv" });
               const url = URL.createObjectURL(blob);
-              if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = filename; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+              const a = document.createElement("a");
+              a.href = url; a.download = `Teaching_Summary_${new Date().toISOString().slice(0,10)}.csv`;
+              document.body.appendChild(a); a.click();
+              document.body.removeChild(a); URL.revokeObjectURL(url);
             }}
           >
             <Feather name="download" size={14} color="#fff" />
@@ -499,7 +504,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#D32F2F", marginBottom: 2 }}>Missed:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.MissedDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? Platform.OS === "web" ? Alert.alert("Notice", String("📅 " + shortDate(d)) + "\n\nRemarks: " + getRemarks(d)) : Alert.alert("Notice", String("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d))) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#FFEBEE", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#EF9A9A", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#C62828", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#C62828" }}>💬</Text> : null}
@@ -513,7 +518,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#2E7D32", marginBottom: 2 }}>Makeup:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.MakeupDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? Platform.OS === "web" ? Alert.alert("Notice", String("📅 " + shortDate(d)) + "\n\nRemarks: " + getRemarks(d)) : Alert.alert("Notice", String("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d))) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#E8F5E9", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#A5D6A7", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#2E7D32", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#2E7D32" }}>💬</Text> : null}
@@ -527,7 +532,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#E65100", marginBottom: 2 }}>Late:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.LateDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? Platform.OS === "web" ? Alert.alert("Notice", String("📅 " + shortDate(d)) + "\n\nRemarks: " + getRemarks(d)) : Alert.alert("Notice", String("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d))) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#FFF3E0", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#FFCC80", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#E65100", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#E65100" }}>💬</Text> : null}

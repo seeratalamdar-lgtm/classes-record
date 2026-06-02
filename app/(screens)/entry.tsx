@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useEffect, useCallback } from "react";
 import {
@@ -233,10 +234,10 @@ export default function EntryScreen() {
         } catch { setNotifyStudents([]); }
         setShowNotify(true);
       } else {
-        Alert.alert("Notice", String("✅ Entry saved successfully!"));
+        showAlert("✅ Entry saved successfully!");
       }
     },
-    onError: () => Alert.alert("Notice", String("❌ Failed to save entry. Please try again.")),
+    onError: () => showAlert("❌ Failed to save entry. Please try again."),
   });
 
   const handleLogin = async () => {
@@ -248,7 +249,7 @@ export default function EntryScreen() {
   };
 
   async function handleBulkImport() {
-    if (!bulkDate) { Alert.alert("Notice", String("Please select a date.")); return; }
+    if (!bulkDate) { showAlert("Please select a date."); return; }
     setBulkLoading(true); setBulkResult("");
     try {
       const _domain = process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online";
@@ -263,7 +264,7 @@ export default function EntryScreen() {
       const msg = data.inserted === 0 ? (data.message || "No scheduled classes found for " + data.dayOfWeek + ". Please select a Mon-Fri date.") : data.inserted + " entries imported as " + bulkType.charAt(0).toUpperCase()+bulkType.slice(1) + " for " + bulkDate + " (" + data.dayOfWeek + "). Total scheduled: " + data.total;
       setBulkResult((data.inserted===0?"⚠️ ":"✅ ") + msg);
       setTimeout(() => { setShowBulkImport(false); setBulkResult(""); setBulkRemarks(""); }, 2500);
-    } catch(e: any) { Alert.alert("Notice", String("Import failed: " + e.message)); }
+    } catch(e: any) { showAlert("Import failed: " + e.message); }
     setBulkLoading(false);
   }
 
@@ -311,10 +312,10 @@ export default function EntryScreen() {
         body:JSON.stringify({Faculty:e.faculty,Subject:e.subject,Class:e.class_name,Dept:e.dept||"",Date:addMakeupDate,Location:e.location||"",Time:e.time_start,EndTime:e.time_end,LecLab:e.lec_lab||"Lec",Type:"Makeup",User:user||"",scheduleId:schedId})
       });
       const data=await res.json();
-      if(data.success){ Alert.alert("Notice", String("✅ Makeup entry saved for "+addMakeupDate+"!")); setAddingMakeupEntry(null); setAddMakeupDate(""); handleViewEntries(); }
-      else if(data.clash){ Alert.alert("Notice", String("Clash Detected: "+data.message)); }
-      else { Alert.alert("Notice", String("Save failed: "+(data.error||data.message||"Unknown"))); }
-    } catch(ex:any){ Alert.alert("Notice", String("Error: "+ex.message)); }
+      if(data.success){ showAlert("✅ Makeup entry saved for "+addMakeupDate+"!"); setAddingMakeupEntry(null); setAddMakeupDate(""); handleViewEntries(); }
+      else if(data.clash){ showAlert("Clash Detected: "+data.message); }
+      else { showAlert("Save failed: "+(data.error||data.message||"Unknown")); }
+    } catch(ex:any){ showAlert("Error: "+ex.message); }
     setAddMakeupSaving(false);
   }
 
@@ -336,20 +337,20 @@ export default function EntryScreen() {
       });
       const data=await res.json();
       if(data.success){ setAddingEntry(null); setAddDate(""); handleViewEntries(); }
-      else if(data.clash){ Alert.alert("Notice", String("Clash Detected: "+data.message)); }
-      else { Alert.alert("Notice", String("Save failed: "+(data.error||"Unknown error"))); }
-    } catch(e:any){ Alert.alert("Notice", String("Error: "+e.message)); }
+      else if(data.clash){ showAlert("Clash Detected: "+data.message); }
+      else { showAlert("Save failed: "+(data.error||"Unknown error")); }
+    } catch(e:any){ showAlert("Error: "+e.message); }
     setAddSaving(false);
   }
 
   async function handleDeleteEntry(id: number) {
     const _domain = process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online";
-    if (!(Platform.OS === "web" ? (Platform.OS === "web" ? window.confirm("Delete this entry? This will also remove related attendance data.") : true) : true)) return;
+    if (!showConfirm("Delete this entry? This will also remove related attendance data.")) return;
     try {
       const res = await fetch("https://" + _domain + "/api/schedule/entry/" + id, { method: "DELETE" });
       if (res.ok) { setAllEntries(prev => prev.filter(e => e.id !== id)); }
-      else { Alert.alert("Notice", String("Delete failed")); }
-    } catch(e) { Alert.alert("Notice", String("Error deleting entry")); }
+      else { showAlert("Delete failed"); }
+    } catch(e) { showAlert("Error deleting entry"); }
   }
 
   const typeColors: Record<EntryType, string> = {
@@ -416,7 +417,7 @@ export default function EntryScreen() {
 
 
   function handleEntriesExportCsv() {
-    if (!allEntries.length && !schedule.length) { Alert.alert("Notice", String("No entries to export.")); return; }
+    if (!allEntries.length && !schedule.length) { showAlert("No entries to export."); return; }
     const header = ["Type","Date","Day","Faculty","Subject","Class","Dept","Location","Time","EndTime","Lec/Lab","Remarks"];
     const csvRows = (allEntries as any[]).map((e:any) => [
       e.type||"", e.entry_date||"", e.day||"", e.faculty||"", e.subject||"", e.class_name||"", e.dept||"", e.location||"", e.time_start||"", e.time_end||"", e.lec_lab||"", e.remarks||""
@@ -429,7 +430,8 @@ export default function EntryScreen() {
     });
     const csv = [header.join(","), ...csvRows].join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob); if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = "download"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
+    const url = URL.createObjectURL(blob); const a = document.createElement("a");
+    a.href = url; a.download = "SavedEntries.csv"; a.click(); URL.revokeObjectURL(url);
   }
 
   async function handleEntriesOverride(uri:string, name:string, mimeType:string, file?:File) {
@@ -453,9 +455,9 @@ export default function EntryScreen() {
         body: JSON.stringify({scheduleId: schedId, entries})
       });
       const result = await res2.json();
-      if (result.success) { setShowEntriesOverride(false); Alert.alert("Notice", String("Override complete! "+result.imported+" entries updated.")); handleViewEntries(); }
-      else Alert.alert("Notice", String("Override failed: "+(result.error||"Unknown error")));
-    } catch(e:any) { Alert.alert("Notice", String("Override failed: "+e.message)); }
+      if (result.success) { setShowEntriesOverride(false); showAlert("Override complete! "+result.imported+" entries updated."); handleViewEntries(); }
+      else showAlert("Override failed: "+(result.error||"Unknown error"));
+    } catch(e:any) { showAlert("Override failed: "+e.message); }
     setEntriesOverrideLoading(false);
   }
     if (isLoading) return <View style={{flex:1,justifyContent:"center",alignItems:"center"}}><ActivityIndicator size="large" color="#1565C0"/></View>;
@@ -667,7 +669,7 @@ export default function EntryScreen() {
           <View style={{backgroundColor:"#fff",borderTopLeftRadius:20,borderTopRightRadius:20,padding:24,maxHeight:"80%"}}>
             <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
               <Text style={{ fontSize: 17, fontFamily: "Inter_700Bold", color: "#1A1A1A" }}>Notify Students</Text>
-              <TouchableOpacity onPress={() => { setShowNotify(false); Alert.alert("Notice", String("✅ Makeup entry saved successfully!")); }}>
+              <TouchableOpacity onPress={() => { setShowNotify(false); showAlert("✅ Makeup entry saved successfully!"); }}>
                 <Feather name="x" size={22} color="#666" />
               </TouchableOpacity>
             </View>
@@ -721,7 +723,7 @@ export default function EntryScreen() {
             )}
             <TouchableOpacity
               style={{ marginTop: 12, padding: 12, alignItems: "center" }}
-              onPress={() => { setShowNotify(false); Alert.alert("Notice", String("✅ Makeup entry saved successfully!")); }}
+              onPress={() => { setShowNotify(false); showAlert("✅ Makeup entry saved successfully!"); }}
             >
               <Text style={{ fontFamily: "Inter_500Medium", fontSize: 14, color: "#888" }}>Skip Notification</Text>
             </TouchableOpacity>
@@ -787,7 +789,7 @@ export default function EntryScreen() {
                   <Feather name="file-text" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>Export CSV</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>{const inp=null as HTMLInputElement;if(inp)inp.click();}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
+                <TouchableOpacity onPress={()=>{const inp=document.getElementById('entries-override-input') as HTMLInputElement;if(inp)inp.click();}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
                   <Feather name="refresh-cw" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>{entriesOverrideLoading?"Uploading...":"Override"}</Text>
                 </TouchableOpacity>

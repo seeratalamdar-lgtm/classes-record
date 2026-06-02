@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useCallback } from "react";
 import {
@@ -51,9 +52,9 @@ export default function FacultyCredentialsScreen() {
       const r = await generateFacultyAccounts(scheduleId);
       qc.invalidateQueries({ queryKey: ["facultyAccounts", scheduleId] });
       if (r.created === 0) {
-        if (typeof window !== "undefined") Alert.alert("Notice", String("All faculty already have credentials.")); else Alert.alert("Up to Date", "All faculty already have credentials.");
+        if (typeof window !== "undefined") showAlert("All faculty already have credentials."); else Alert.alert("Up to Date", "All faculty already have credentials.");
       } else {
-        if (typeof window !== "undefined") Alert.alert("Notice", String("Done! Created " + r.created + " new account" + (r.created !== 1 ? "s" : "")) + "."); else Alert.alert("Done", `Created ${r.created} new accounts.`);
+        if (typeof window !== "undefined") showAlert("Done! Created " + r.created + " new account" + (r.created !== 1 ? "s" : "") + "."); else Alert.alert("Done", `Created ${r.created} new accounts.`);
       }
     } finally {
       setGenerating(false);
@@ -89,12 +90,12 @@ export default function FacultyCredentialsScreen() {
 
   async function handleDelete(acc: FacultyAccount) {
     const confirmed = typeof window !== "undefined"
-      ? (Platform.OS === "web" ? window.confirm(`Remove credentials for ${acc.facultyName}? They will no longer be able to log in.`) : true)
+      ? showConfirm(`Remove credentials for ${acc.facultyName}? They will no longer be able to log in.`)
       : true;
     if (confirmed) {
       await deleteFacultyAccount(acc.id);
       qc.invalidateQueries({ queryKey: ["facultyAccounts", scheduleId] });
-      if (typeof window !== "undefined") Alert.alert("Notice", String(`✅ ${acc.facultyName} account deleted.`));
+      if (typeof window !== "undefined") showAlert(`✅ ${acc.facultyName} account deleted.`);
     }
   }
 

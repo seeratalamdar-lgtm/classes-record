@@ -1,3 +1,4 @@
+import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
 import {
@@ -373,7 +374,30 @@ export default function FinanceScreen() {
       } catch (e: any) { setRatesBulkLoading(false); setErrorMsg("Upload failed: " + e.message); }
     };
     if (Platform.OS === "web") {
-      if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; }
+      const input = document.createElement("input");
+      input.type = "file";
+      input.accept = ".xlsx,.xls,.csv";
+      input.onchange = async (e: any) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        setRatesBulkLoading(true);
+        try {
+          const text = await file.text();
+          const domain = process.env.EXPO_PUBLIC_DOMAIN || "classes-record-5azb.onrender.com";
+          const url = `https://${domain}/api/finance/rates/import?scheduleId=${schId ?? ""}&personType=${encodeURIComponent(type)}`;
+          const res = await fetch(url, { method: "POST", headers: { "Content-Type": "text/plain" }, body: text });
+          const result = await res.json();
+          setRatesBulkLoading(false);
+          if (result.success) {
+            Alert.alert("Rates Imported", `${result.saved ?? 0} rate(s) saved, ${result.skipped ?? 0} skipped.`);
+            const setter = type === "student" ? setStudentRows : type === "faculty" ? setFacultyRows : setStaffPayRows;
+            await loadPayRows(type, setter, period);
+            if (type === "staff") refetchStaff();
+            if (showRatesModal === type) openRatesModal(type);
+          } else { setErrorMsg(result.error ?? "Import failed"); }
+        } catch (err: any) { setRatesBulkLoading(false); setErrorMsg("Upload failed: " + err.message); }
+      };
+      input.click();
       return;
     }
     try {
