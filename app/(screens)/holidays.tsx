@@ -198,8 +198,8 @@ export default function HolidaysScreen() {
                   <Text style={s.cardName}>{h.name}</Text>
                 </View>
                 {!isPublicView && <TouchableOpacity onPress={() => {
-                  const confirmed = typeof window !== "undefined"
-                    ? (Platform.OS === "web" ? window.confirm(`Remove "${h.name}" (${new Date(h.date+"T00:00:00") : true).toLocaleDateString("en-GB",{day:"numeric",month:"short",year:"numeric"})})?`)
+                  const confirmed = Platform.OS === "web" 
+                    ? window.confirm(`Remove "${h.name}"?`)
                     : true;
                   if (confirmed) deleteMutation.mutate(h.id);
                 }}>
