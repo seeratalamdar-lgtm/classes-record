@@ -344,7 +344,7 @@ export default function EntryScreen() {
 
   async function handleDeleteEntry(id: number) {
     const _domain = process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online";
-    if (!(Platform.OS === "web" ? window.confirm("Delete this entry? This will also remove related attendance data.") : true)) return;
+    if (!(Platform.OS === "web" ? (Platform.OS === "web" ? window.confirm("Delete this entry? This will also remove related attendance data.") : true) : true)) return;
     try {
       const res = await fetch("https://" + _domain + "/api/schedule/entry/" + id, { method: "DELETE" });
       if (res.ok) { setAllEntries(prev => prev.filter(e => e.id !== id)); }
@@ -429,8 +429,7 @@ export default function EntryScreen() {
     });
     const csv = [header.join(","), ...csvRows].join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
-    const url = URL.createObjectURL(blob); const a = document.createElement("a");
-    a.href = url; a.download = "SavedEntries.csv"; a.click(); URL.revokeObjectURL(url);
+    const url = URL.createObjectURL(blob); if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = "download"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
   }
 
   async function handleEntriesOverride(uri:string, name:string, mimeType:string, file?:File) {
@@ -788,7 +787,7 @@ export default function EntryScreen() {
                   <Feather name="file-text" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>Export CSV</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>{const inp=document.getElementById('entries-override-input') as HTMLInputElement;if(inp)inp.click();}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
+                <TouchableOpacity onPress={()=>{const inp=null as HTMLInputElement;if(inp)inp.click();}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
                   <Feather name="refresh-cw" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>{entriesOverrideLoading?"Uploading...":"Override"}</Text>
                 </TouchableOpacity>

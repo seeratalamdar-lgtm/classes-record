@@ -51,9 +51,9 @@ export default function StudentCredentialsScreen() {
       const r = await generateStudentAccounts(scheduleId);
       qc.invalidateQueries({ queryKey: ["studentAccounts", scheduleId] });
       if (r.created === 0) {
-        if (typeof window !== "undefined") window.alert("All students already have credentials."); else Alert.alert("Up to Date", "All students already have credentials.");
+        if (typeof window !== "undefined") Alert.alert("Notice", String("All students already have credentials.")); else Alert.alert("Up to Date", "All students already have credentials.");
       } else {
-        if (typeof window !== "undefined") window.alert("Done! Created " + r.created + " new account" + (r.created !== 1 ? "s" : "") + "."); else Alert.alert("Done", `Created ${r.created} new accounts.`);
+        if (typeof window !== "undefined") Alert.alert("Notice", String("Done! Created " + r.created + " new account" + (r.created !== 1 ? "s" : "")) + "."); else Alert.alert("Done", `Created ${r.created} new accounts.`);
       }
     } finally {
       setGenerating(false);
@@ -89,12 +89,12 @@ export default function StudentCredentialsScreen() {
 
   async function handleDelete(acc: StudentAccount) {
     const confirmed = typeof window !== "undefined"
-      ? window.confirm(`Remove credentials for ${acc.studentName + " (" + acc.rollNo + ")"}? They will no longer be able to log in.`)
+      ? (Platform.OS === "web" ? window.confirm(`Remove credentials for ${acc.studentName + " (" + acc.rollNo + ") : true)"}? They will no longer be able to log in.`)
       : true;
     if (confirmed) {
       await deleteStudentAccount(acc.id);
       qc.invalidateQueries({ queryKey: ["studentAccounts", scheduleId] });
-      if (typeof window !== "undefined") window.alert(`✅ ${acc.studentName + " (" + acc.rollNo + ")"} account deleted.`);
+      if (typeof window !== "undefined") Alert.alert("Notice", String(`✅ ${acc.studentName + " (" + acc.rollNo + "))"} account deleted.`);
     }
   }
 

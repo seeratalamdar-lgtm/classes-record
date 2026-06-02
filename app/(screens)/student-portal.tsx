@@ -113,39 +113,13 @@ export default function StudentPortalScreen() {
     }).then(r => r.json());
     if (res.success) {
       setShowChangePass(false);
-      if (typeof window !== "undefined") window.alert("✅ Password changed successfully!");
+      if (typeof window !== "undefined") Alert.alert("Notice", String("✅ Password changed successfully!"));
     } else { setErrorMsg(res.message || "Failed to change password"); }
   }
 
   function handlePhotoChange() {
     if (typeof window === "undefined" || !session) return;
-    const input = document.createElement("input");
-    input.type = "file"; input.accept = "image/*";
-    input.onchange = (e: any) => {
-      const file = e.target.files[0];
-      if (!file) return;
-      if (file.size > 1024 * 1024) { window.alert("Photo must be less than 1 MB"); return; }
-      const reader = new FileReader();
-      reader.onload = (ev: any) => {
-        // Compress to max 300x300
-        const img = document.createElement("img");
-        img.onload = () => {
-          const canvas = document.createElement("canvas");
-          const MAX = 300;
-          let w = img.width, h = img.height;
-          if (w > MAX) { h = Math.round(h * MAX / w); w = MAX; }
-          if (h > MAX) { w = Math.round(w * MAX / h); h = MAX; }
-          canvas.width = w; canvas.height = h;
-          canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
-          const compressed = canvas.toDataURL("image/jpeg", 0.7);
-          setPhotoUri(compressed);
-          localStorage.setItem(PHOTO_KEY + session.username, compressed);
-        };
-        img.src = ev.target.result;
-      };
-      reader.readAsDataURL(file);
-    };
-    input.click();
+    if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; }
   }
 
   const s = StyleSheet.create({

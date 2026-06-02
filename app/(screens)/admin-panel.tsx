@@ -168,8 +168,7 @@ export default function AdminPanelScreen() {
     if (Platform.OS === "web") {
       const blob = new Blob([csv], { type: "text/csv" });
       const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = "users.csv"; a.click();
-      URL.revokeObjectURL(url);
+      if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = "download"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
     } else {
       const filePath = (FileSystem.documentDirectory ?? "") + "users.csv";
       await FileSystem.writeAsStringAsync(filePath, csv);

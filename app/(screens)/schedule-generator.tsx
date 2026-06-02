@@ -516,28 +516,7 @@ export default function ScheduleGenerator() {
   const handleUpload = async () => {
     if (Platform.OS === "web") {
       // Web: use native file input
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".csv,text/csv";
-      input.onchange = async (e: any) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setFileName(file.name);
-        const text = await file.text();
-        const lines = text.split(/\r?\n/).filter((l: string) => l.trim());
-        if (!lines.length) { setError("Empty file"); return; }
-        const headers = lines[0].split(",").map((h: string) => h.trim().replace(/\r/,"").replace(/"/g,""));
-        const data = lines.slice(1).map((line: string) => {
-          const vals = line.split(",");
-          const obj: Record<string,string> = {};
-          headers.forEach((h: string, i: number) => { obj[h] = (vals[i]||"").trim().replace(/\r/,"").replace(/"/g,""); });
-          return obj;
-        }).filter((r: Record<string,string>) => Object.values(r).some(v => v));
-        setCsvData(data);
-        setGenerated([]);
-        setError("");
-      };
-      input.click();
+      if (Platform.OS !== "web") { Alert.alert("Notice", "This feature is only available on web browser"); return; }
       return;
     }
     try {
@@ -715,10 +694,7 @@ export default function ScheduleGenerator() {
 "HU101,Islamic Studies,HU,Mr. Ammar Ahmed (ABC),Regular,BS(CS)-7,2+0"].join("\n");
           const blob=new Blob([csv],{type:"text/csv"});
           const url=URL.createObjectURL(blob);
-          const a=document.createElement("a");
-          a.href=url;a.download="Testing_Schedule.csv";
-          document.body.appendChild(a);a.click();
-          document.body.removeChild(a);URL.revokeObjectURL(url);
+          if (typeof document !== "undefined") { const a = document.createElement("a"); a.href = url; a.download = "download"; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); }
         }
       }}>
         <Feather name="download" size={16} color="#fff"/>
