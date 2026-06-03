@@ -1,4 +1,3 @@
-import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useCallback } from "react";
 import {
@@ -504,7 +503,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#D32F2F", marginBottom: 2 }}>Missed:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.MissedDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? window.alert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#FFEBEE", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#EF9A9A", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#C62828", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#C62828" }}>💬</Text> : null}
@@ -518,7 +517,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#2E7D32", marginBottom: 2 }}>Makeup:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.MakeupDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? window.alert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#E8F5E9", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#A5D6A7", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#2E7D32", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#2E7D32" }}>💬</Text> : null}
@@ -532,7 +531,7 @@ export default function SummaryScreen() {
                           <Text style={{ fontSize: 11, fontFamily: "Inter_600SemiBold", color: "#E65100", marginBottom: 2 }}>Late:</Text>
                           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 4 }}>
                             {r.LateDates.map((d: any, i: number) => (
-                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? showAlert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
+                              <TouchableOpacity key={i} onPress={() => getRemarks(d) ? window.alert("📅 " + shortDate(d) + "\n\nRemarks: " + getRemarks(d)) : null}
                                 style={{ backgroundColor: "#FFF3E0", borderRadius: 6, paddingHorizontal: 7, paddingVertical: 3, borderWidth: 1, borderColor: "#FFCC80", flexDirection: "row", alignItems: "center", gap: 3 }}>
                                 <Text style={{ fontSize: 11, color: "#E65100", fontFamily: "Inter_500Medium" }}>{shortDate(d)}</Text>
                                 {getRemarks(d) ? <Text style={{ fontSize: 10, color: "#E65100" }}>💬</Text> : null}

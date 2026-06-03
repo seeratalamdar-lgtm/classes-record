@@ -1,4 +1,3 @@
-import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState } from "react";
 import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from "react-native";

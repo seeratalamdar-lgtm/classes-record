@@ -1,4 +1,3 @@
-import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Linking, Platform } from "react-native";
@@ -141,7 +140,7 @@ export default function StudentsScreen() {
       : (allStudents || []).filter((s: any) => s.className === selectedClass);
     if (!studs.length) { setError("No students to delete"); return; }
     const label = isAllSections ? "ALL sections of " + selectedKey : selectedClass;
-    if (!showConfirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.")) return;
+    if (!window.confirm("Delete ALL " + studs.length + " students from " + label + "? This cannot be undone.")) return;
     setDeleteAllLoading(true);
     for (const s of studs) {
       await deleteStudent(s.id).catch(() => {});
