@@ -547,7 +547,7 @@ export default function ScheduleGenerator() {
       setCsvData(data);
       setGenerated([]);
       setError("");
-    } catch(e: any) { setError("Upload failed: " + e.message); }
+    } catch(e: any) { setError("Upload failed: " + JSON.stringify({msg: e.message, name: e.name, stack: (e.stack||"").slice(0,200)})); }
   };
 
   const handleGenerate = () => {
