@@ -1,9 +1,11 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Alert } from "react-native";
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Alert, Platform } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system";
+import * as Sharing from "expo-sharing";
 // expo-file-system removed - using fetch API for web compatibility
 
 const colors = { primary:"#1565C0", success:"#2E7D32", bg:"#F5F7FA", card:"#fff", text:"#1a1a2e", muted:"#6B7280", purple:"#6A1B9A" };
@@ -506,6 +508,7 @@ export default function ScheduleGenerator() {
   const [generating, setGenerating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState("");
+  React.useEffect(() => { setError(""); }, []);
 
   const activeDays = String(params.activeDays||"").split(",").filter(Boolean);
   const startHour = parseInt(String(params.startHour||"9"));
@@ -514,32 +517,6 @@ export default function ScheduleGenerator() {
   const breakEnd = parseInt(String(params.breakEnd||"14")) * 60;
 
   const handleUpload = async () => {
-    if (Platform.OS === "web") {
-      // Web: use native file input
-      const input = document.createElement("input");
-      input.type = "file";
-      input.accept = ".csv,text/csv";
-      input.onchange = async (e: any) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        setFileName(file.name);
-        const text = await file.text();
-        const lines = text.split(/\r?\n/).filter((l: string) => l.trim());
-        if (!lines.length) { setError("Empty file"); return; }
-        const headers = lines[0].split(",").map((h: string) => h.trim().replace(/\r/,"").replace(/"/g,""));
-        const data = lines.slice(1).map((line: string) => {
-          const vals = line.split(",");
-          const obj: Record<string,string> = {};
-          headers.forEach((h: string, i: number) => { obj[h] = (vals[i]||"").trim().replace(/\r/,"").replace(/"/g,""); });
-          return obj;
-        }).filter((r: Record<string,string>) => Object.values(r).some(v => v));
-        setCsvData(data);
-        setGenerated([]);
-        setError("");
-      };
-      input.click();
-      return;
-    }
     try {
       const res = await DocumentPicker.getDocumentAsync({ type: "text/csv" });
       if (res.canceled) return;
@@ -623,14 +600,14 @@ export default function ScheduleGenerator() {
           <Feather name="arrow-left" size={18} color="#fff"/><Text style={{ color:"#fff", fontWeight:"600" }}>Back</Text>
         </TouchableOpacity>
         <Text style={s.hTitle}>AI Schedule Generator</Text>
-        <Text style={s.hSub}>{params.scheduleTitle} \u00b7 {activeDays.join(", ")} \u00b7 {startHour}:00\u2013{endHour}:00</Text>
+        <Text style={s.hSub}>{params.scheduleTitle} · {activeDays.join(", ")} · {startHour}:00–{endHour}:00</Text>
       </View>
       <ScrollView style={s.body}>
         {!!error && <View style={s.errBox}><Text style={s.errTxt}>{error}</Text></View>}
 
         <View style={s.card}>
-          <TouchableOpacity style={[s.btn,{backgroundColor:"#1565C0",marginBottom:8}]} onPress={()=>{
-        if(typeof document!=="undefined"){
+          <TouchableOpacity style={[s.btn,{backgroundColor:"#1565C0",marginBottom:8}]} onPress={async ()=>{
+        {
           const csv=["Subject Code,Subjects,Department,Instructor Name with Sections,Regular/Elective,Class,Credit Hrs",
 "OTM455,Engineering Project Management,HU,Mr. Talha Aleem Khawja (ABCD),Regular,BEE-6,2+0",
 "HU212,Technical & Business Writing,HU,Ms. Komal Malik (ABCD),Regular,BEE-6,2+0",
@@ -713,12 +690,28 @@ export default function ScheduleGenerator() {
 "HU109,Communication Skills,HU,Ms. Sehrish Aslam (AB),Regular,BS(CS)-7,2+0",
 "HU109,Communication Skills,HU,Mr. Usman Khawar (C),Regular,BS(CS)-7,2+0",
 "HU101,Islamic Studies,HU,Mr. Ammar Ahmed (ABC),Regular,BS(CS)-7,2+0"].join("\n");
-          const blob=new Blob([csv],{type:"text/csv"});
-          const url=URL.createObjectURL(blob);
-          const a=document.createElement("a");
-          a.href=url;a.download="Testing_Schedule.csv";
-          document.body.appendChild(a);a.click();
-          document.body.removeChild(a);URL.revokeObjectURL(url);
+          if (Platform.OS === "web") {
+            const blob=new Blob([csv],{type:"text/csv"});
+            const url=URL.createObjectURL(blob);
+            const a=document.createElement("a");
+            a.href=url;a.download="Testing_Schedule.csv";
+            document.body.appendChild(a);a.click();
+            document.body.removeChild(a);URL.revokeObjectURL(url);
+          } else {
+            try {
+              const dir = FileSystem.documentDirectory || FileSystem.cacheDirectory || "";
+              const path = dir + "Testing_Schedule.csv";
+              await FileSystem.writeAsStringAsync(path, csv, { encoding: "utf8" });
+              const canShare = await Sharing.isAvailableAsync();
+              if (canShare) {
+                await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });
+              } else {
+                Alert.alert("Saved", "File saved to: " + path);
+              }
+            } catch(e: any) {
+              Alert.alert("Error", e.message);
+            }
+          }
         }
       }}>
         <Feather name="download" size={16} color="#fff"/>
@@ -756,7 +749,7 @@ export default function ScheduleGenerator() {
                 <Text style={[s.cell,{color:r.LecLab==="Lab"?colors.purple:r.Elective?"#E65100":colors.text}]}>{r.LecLab}{r.Elective?" E":""}</Text>
               </View>
             ))}
-            {generated.length>25&&<Text style={{padding:10,textAlign:"center",fontSize:11,color:colors.muted}}>...+{generated.length-25} more \u00b7 Labs=purple \u00b7 Electives=E</Text>}
+            {generated.length>25&&<Text style={{padding:10,textAlign:"center",fontSize:11,color:colors.muted}}>...+{generated.length-25} more · Labs=purple · Electives=E</Text>}
             <TouchableOpacity style={[s.btn,{backgroundColor:colors.success,marginTop:10}]} onPress={handleImport} disabled={importing}>
               {importing?<ActivityIndicator color="#fff" size="small"/>:<Feather name="check" size={16} color="#fff"/>}
               <Text style={[s.btnTxt,{color:"#fff"}]}>{importing?"Importing...":"Import "+generated.length+" Entries to Schedule"}</Text>

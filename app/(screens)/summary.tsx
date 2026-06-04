@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import React, { useState, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -8,7 +9,6 @@ import { useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { printOrShareHtml } from "@/utils/printHtml";
 
 import { useColors } from "@/hooks/useColors";
@@ -49,11 +49,11 @@ export default function SummaryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
@@ -62,6 +62,8 @@ export default function SummaryScreen() {
   const scheduleStartDate = params.startDate ? String(params.startDate).slice(0,10) : SEM_START;
   const [startDate, setStartDate] = useState(scheduleStartDate);
   const [endDate, setEndDate] = useState(todayStr);
+  const [showStartDatePicker, setShowStartDatePicker] = useState(false);
+  const [showEndDatePicker, setShowEndDatePicker] = useState(false);
   const [deptFilter, setDeptFilter] = useState("ALL");
   const [facFilter, setFacFilter] = useState("");
   const [showFacPicker, setShowFacPicker] = useState(false);
@@ -334,8 +336,26 @@ export default function SummaryScreen() {
         {/* ── Filters ── */}
         <View style={s.filterSection}>
           <View style={s.dateRow}>
-            <input type="date" value={startDate} onChange={(e:any)=>setStartDate(e.target.value)} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${colors.border}`,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1} as any} placeholderTextColor={colors.mutedForeground} />
-            <input type="date" value={endDate} onChange={(e:any)=>setEndDate(e.target.value)} style={{padding:"10px 12px",borderRadius:10,border:`1px solid ${colors.border}`,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1} as any} placeholderTextColor={colors.mutedForeground} />
+            {Platform.OS === "web" ? (
+              <TextInput value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:colors.border,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1}} />
+            ) : (
+              <>
+                <TouchableOpacity onPress={() => setShowStartDatePicker(true)} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:colors.border,backgroundColor:colors.muted,flex:1}}>
+                  <Text style={{color:startDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{startDate || "Start Date"}</Text>
+                </TouchableOpacity>
+                {showStartDatePicker && <DateTimePicker value={startDate?new Date(startDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowStartDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setStartDate(`${y}-${m}-${dd}`);}}} />}
+              </>
+            )}
+            {Platform.OS === "web" ? (
+              <TextInput value={endDate} onChangeText={setEndDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:colors.border,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1}} />
+            ) : (
+              <>
+                <TouchableOpacity onPress={() => setShowEndDatePicker(true)} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:colors.border,backgroundColor:colors.muted,flex:1}}>
+                  <Text style={{color:endDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{endDate || "End Date"}</Text>
+                </TouchableOpacity>
+                {showEndDatePicker && <DateTimePicker value={endDate?new Date(endDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowEndDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setEndDate(`${y}-${m}-${dd}`);}}} />}
+              </>
+            )}
           </View>
           <View style={s.quickBtns}>
             {[
@@ -395,6 +415,7 @@ export default function SummaryScreen() {
               const csv = header + csvRows;
               const blob = new Blob([csv], { type: "text/csv" });
               const url = URL.createObjectURL(blob);
+              if (Platform.OS !== "web") { Alert.alert("Saved", "Use website to download PDF summary."); return; }
               const a = document.createElement("a");
               a.href = url; a.download = `Teaching_Summary_${new Date().toISOString().slice(0,10)}.csv`;
               document.body.appendChild(a); a.click();

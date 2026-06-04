@@ -6,6 +6,7 @@ import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { fetchSchedule, addFinancePerson, deactivateFinancePerson } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
 
@@ -25,6 +26,7 @@ export default function PersonnelScreen() {
   const [actionType, setActionType] = useState<ActionType>("join");
   const [personName, setPersonName] = useState("");
   const [personEmail, setPersonEmail] = useState("");
+  const [showEffectiveDatePicker, setShowEffectiveDatePicker] = useState(false);
   const [effectiveDate, setEffectiveDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -276,12 +278,14 @@ export default function PersonnelScreen() {
               </>}
               <Text style={s.label}>Joining Date (exact)</Text>
               {Platform.OS === "web" ? (
-                <input type="date" value={effectiveDate} onChange={(e: any) => setEffectiveDate(e.target.value)}
-                  style={{ width: "100%", padding: "10px 12px", fontSize: 14, borderRadius: 8, border: "1px solid #e0e0e0", marginBottom: 12, fontFamily: "inherit" } as any}
-                />
+                <TextInput value={effectiveDate} onChangeText={setEffectiveDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
               ) : (
-                <TextInput style={s.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground}
-                  value={effectiveDate} onChangeText={setEffectiveDate} />
+                              <>
+                  <TouchableOpacity onPress={() => setShowEffectiveDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>
+                    <Text style={{color:effectiveDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{effectiveDate || "Select Date"}</Text>
+                  </TouchableOpacity>
+                  {showEffectiveDatePicker && <DateTimePicker value={effectiveDate?new Date(effectiveDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowEffectiveDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setEffectiveDate(`${y}-${m}-${dd}`);}}} />}
+                </>
               )}
               <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginHorizontal: 14, marginBottom: 10 }}>
                 💡 Person will appear in Finance from the month of joining date
@@ -310,8 +314,17 @@ export default function PersonnelScreen() {
                 <Feather name="chevron-down" size={15} color={colors.mutedForeground} />
               </TouchableOpacity>
               <Text style={s.label}>Last Working Date (exact)</Text>
-              <TextInput style={s.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground}
-                value={effectiveDate} onChangeText={setEffectiveDate} />
+              {Platform.OS === "web" ? (
+                <TextInput style={s.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground}
+                  value={effectiveDate} onChangeText={setEffectiveDate} />
+              ) : (
+                              <>
+                  <TouchableOpacity onPress={() => setShowEffectiveDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>
+                    <Text style={{color:effectiveDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{effectiveDate || "Select Date"}</Text>
+                  </TouchableOpacity>
+                  {showEffectiveDatePicker && <DateTimePicker value={effectiveDate?new Date(effectiveDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowEffectiveDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setEffectiveDate(`${y}-${m}-${dd}`);}}} />}
+                </>
+              )}
               <Text style={{ fontSize: 11, fontFamily: "Inter_400Regular", color: colors.mutedForeground, marginHorizontal: 14, marginBottom: 10 }}>
                 💡 Person will be removed from Finance from next month onwards
               </Text>

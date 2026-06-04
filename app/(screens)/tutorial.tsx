@@ -327,7 +327,7 @@ export default function TutorialScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
       }
     }, [])
   );

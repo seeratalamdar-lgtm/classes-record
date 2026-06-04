@@ -30,7 +30,8 @@
     "plugins": [
       "expo-font",
       "expo-web-browser",
-      "expo-screen-orientation"
+      "expo-screen-orientation",
+      "@react-native-community/datetimepicker"
     ],
     "extra": {
       "eas": {

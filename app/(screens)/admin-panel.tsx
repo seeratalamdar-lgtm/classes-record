@@ -12,6 +12,7 @@ import * as ScreenOrientation from "expo-screen-orientation";
 import * as FileSystem from "expo-file-system";
 import * as Sharing from "expo-sharing";
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 const ADMIN_PASSWORD = "Administr@r@123";
@@ -68,7 +69,7 @@ export default function AdminPanelScreen() {
 
   useFocusEffect(useCallback(() => {
     if (Platform.OS !== "web") {
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
     }
   }, []));
 
@@ -92,6 +93,7 @@ export default function AdminPanelScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [expiryTarget, setExpiryTarget] = useState<ManagedUser | null>(null);
   const [expiryDays, setExpiryDays] = useState("30");
+  const [showExpiryDatePicker, setShowExpiryDatePicker] = useState(false);
   const [expiryCustomDate, setExpiryCustomDate] = useState("");
   const [expiryMode, setExpiryMode] = useState<"days" | "date">("days");
 
@@ -426,7 +428,16 @@ export default function AdminPanelScreen() {
             ) : (
               <>
                 <Text style={s.modalLabel}>Expiry Date (YYYY-MM-DD)</Text>
-                <TextInput style={s.modalInput} placeholder="2026-12-31" placeholderTextColor={colors.mutedForeground} value={expiryCustomDate} onChangeText={setExpiryCustomDate} autoFocus />
+                {Platform.OS === "web" ? (
+                  <TextInput style={s.modalInput} placeholder="2026-12-31" placeholderTextColor={colors.mutedForeground} value={expiryCustomDate} onChangeText={setExpiryCustomDate} autoFocus />
+                ) : (
+                  <>
+                    <TouchableOpacity onPress={() => setShowExpiryDatePicker(true)} style={[s.modalInput, {justifyContent:"center"}]}>
+                      <Text style={{color:expiryCustomDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{expiryCustomDate || "Select Expiry Date"}</Text>
+                    </TouchableOpacity>
+                    {showExpiryDatePicker && <DateTimePicker value={expiryCustomDate?new Date(expiryCustomDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowExpiryDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setExpiryCustomDate(`${y}-${m}-${dd}`);}}} />}
+                  </>
+                )}
               </>
             )}
             <View style={s.modalRow}>

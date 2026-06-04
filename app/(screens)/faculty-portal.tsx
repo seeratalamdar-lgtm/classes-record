@@ -8,7 +8,6 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 
 import { useColors } from "@/hooks/useColors";
 import { facultyLogin, changeFacultyPassword, FacultySession } from "@/hooks/useApi";
@@ -22,7 +21,7 @@ export default function FacultyPortalScreen() {
 
   useFocusEffect(useCallback(() => {
     if (Platform.OS !== "web")
-      ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+      
   }, []));
 
   const [session, setSession] = useState<FacultySession | null>(null);
@@ -105,7 +104,7 @@ export default function FacultyPortalScreen() {
 
   React.useEffect(() => {
     if (session?.username && typeof window !== "undefined") {
-      const p = localStorage.getItem(PHOTO_KEY + session.username);
+      const p = Platform.OS === "web" ? localStorage.getItem(PHOTO_KEY + session.username) : null;
       if (p) setPhotoUri(p);
     }
   }, [session?.username]);
@@ -130,7 +129,7 @@ export default function FacultyPortalScreen() {
           canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
           const compressed = canvas.toDataURL("image/jpeg", 0.7);
           setPhotoUri(compressed);
-          localStorage.setItem(PHOTO_KEY + session.username, compressed);
+          if (Platform.OS === "web") localStorage.setItem(PHOTO_KEY + session.username, compressed);
         };
         img.src = ev.target.result;
       };
@@ -170,6 +169,7 @@ export default function FacultyPortalScreen() {
   const [changingPass, setChangingPass] = useState(false);
 
   useEffect(() => {
+    const _loadingTimeout = setTimeout(() => setLoading(false), 3000);
     AsyncStorage.getItem(SESSION_KEY).then(async raw => {
       if (raw) {
         try {
@@ -198,6 +198,10 @@ export default function FacultyPortalScreen() {
           }
         } catch { /* ignore */ }
       }
+      clearTimeout(_loadingTimeout);
+      setLoading(false);
+    }).catch(() => {
+      clearTimeout(_loadingTimeout);
       setLoading(false);
     });
   }, []);

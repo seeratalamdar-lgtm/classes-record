@@ -39,10 +39,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Restore session on app start
   useEffect(() => {
+    const timeout = setTimeout(() => setIsLoading(false), 3000);
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
+      clearTimeout(timeout);
       if (raw) {
         try { setAuthUser(JSON.parse(raw)); } catch { /* corrupt — ignore */ }
       }
+      setIsLoading(false);
+    }).catch(() => {
+      clearTimeout(timeout);
       setIsLoading(false);
     });
   }, []);
@@ -98,7 +103,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const logout = async () => {
-    await AsyncStorage.multiRemove([STORAGE_KEY, "auth_user"]); // clear both old and new keys
+    await AsyncStorage.removeItem(STORAGE_KEY);
+    await AsyncStorage.removeItem("auth_user");
     setAuthUser(null);
   };
 

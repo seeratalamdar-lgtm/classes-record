@@ -1,26 +1,27 @@
-// Web localStorage fallback
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export const webStorage = {
   async getItem(key: string): Promise<string | null> {
-    if (typeof window !== 'undefined') {
-      return localStorage.getItem(key);
+    try {
+      return await AsyncStorage.getItem(key);
+    } catch {
+      return null;
     }
-    return null;
   },
   async setItem(key: string, value: string): Promise<void> {
-    if (typeof window !== 'undefined') {
-      localStorage.setItem(key, value);
-    }
+    try {
+      await AsyncStorage.setItem(key, value);
+    } catch {}
   },
   async removeItem(key: string): Promise<void> {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem(key);
-    }
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch {}
   },
   async clear(): Promise<void> {
-    if (typeof window !== 'undefined') {
-      localStorage.clear();
-    }
+    try {
+      await AsyncStorage.clear();
+    } catch {}
   }
 };
-
 export default webStorage;

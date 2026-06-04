@@ -10,9 +10,9 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
 import { ScrollView as KeyboardAwareScrollView } from "react-native";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchSchedule, fetchOptions, saveEntry, importEntriesExcel,
@@ -63,11 +63,11 @@ export default function EntryScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
@@ -84,6 +84,8 @@ export default function EntryScreen() {
   const [faculty, setFaculty] = useState("");
   const [subject, setSubject] = useState("");
   const [cls, setCls] = useState("");
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showBulkDatePicker, setShowBulkDatePicker] = useState(false);
   const [date, setDate] = useState(() => {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -429,6 +431,7 @@ export default function EntryScreen() {
     });
     const csv = [header.join(","), ...csvRows].join("\n");
     const blob = new Blob([csv], {type:"text/csv"});
+    if (Platform.OS !== "web") { Alert.alert("Info", "PDF export is available on the website version."); return; }
     const url = URL.createObjectURL(blob); const a = document.createElement("a");
     a.href = url; a.download = "SavedEntries.csv"; a.click(); URL.revokeObjectURL(url);
   }
@@ -572,8 +575,12 @@ export default function EntryScreen() {
             <input type="date" value={date} onChange={(e:any)=>setDate(e.target.value)}
               style={{flex:1,backgroundColor:"#fff",borderRadius:10,paddingLeft:14,paddingRight:14,paddingTop:12,paddingBottom:12,fontSize:14,border:"1px solid "+colors.border,color:colors.foreground,fontFamily:"inherit",outline:"none",height:46}}/>
           ) : (
-            <TextInput style={s.dateInput} value={date} onChangeText={setDate}
-              placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground}/>
+            <>
+              <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[s.dateInput, {justifyContent:"center"}]}>
+                <Text style={{color:date?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{date || "Select Date"}</Text>
+              </TouchableOpacity>
+              {showDatePicker && <DateTimePicker value={date?new Date(date):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setDate(`${y}-${m}-${dd}`);}}} />}
+            </>
           )}
           {selectedDay ? <View style={s.dayBadge}><Text style={s.dayBadgeTxt}>{selectedDay}</Text></View> : null}
         </View>
@@ -741,7 +748,7 @@ export default function EntryScreen() {
             <Text style={{fontSize:13,color:"#666",marginBottom:16}}>Bulk import all scheduled classes for a weekday as Missed or Makeup entries.</Text>
             <Text style={{fontSize:12,fontWeight:"600",color:"#333",marginBottom:6,textTransform:"uppercase"}}>Date</Text>
             <View style={{borderWidth:1,borderColor:"#ddd",borderRadius:8,marginBottom:6}}>
-              {typeof window!=="undefined"&&<input type="date" value={bulkDate} onChange={(e:any)=>setBulkDate(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:14,border:"none",borderRadius:8,outline:"none",fontFamily:"inherit"}}/>}
+              {Platform.OS==="web" ? <input type="date" value={bulkDate} onChange={(e:any)=>setBulkDate(e.target.value)} style={{width:"100%",padding:"10px 12px",fontSize:14,border:"none",borderRadius:8,outline:"none",fontFamily:"inherit"}}/> : <><TouchableOpacity onPress={() => setShowBulkDatePicker(true)} style={{padding:12,borderRadius:8,borderWidth:1,borderColor:"#ddd",backgroundColor:"#fff"}}><Text style={{color:bulkDate?"#000":"#999",fontSize:14,fontFamily:"Inter_400Regular"}}>{bulkDate || "Select Date"}</Text></TouchableOpacity>{showBulkDatePicker && <DateTimePicker value={bulkDate?new Date(bulkDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowBulkDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setBulkDate(`${y}-${m}-${dd}`);}}} />}</>}
             </View>
             {bulkDate?(()=>{const d=new Date(bulkDate+"T00:00:00");const days=["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];const dn=days[d.getDay()];const isWknd=d.getDay()===0||d.getDay()===6;if(isWknd&&bulkType!=="makeup")setBulkType("makeup");return(<Text style={{fontSize:12,marginBottom:12,fontWeight:"600",color:isWknd?"#E65100":"#2E7D32"}}>{isWknd?"📅 "+dn+" — Weekend: Makeup sessions only allowed.":"✅ "+dn+" — Classes will be imported."}</Text>);})():null}
             {bulkDate&&(()=>{const dd=new Date(bulkDate+"T00:00:00");return dd.getDay()===0||dd.getDay()===6;})()&&bulkType==="makeup"&&(<><Text style={{fontSize:12,fontWeight:"600",color:"#333",marginBottom:6,textTransform:"uppercase"}}>Import Schedule From (Weekday)</Text><Text style={{fontSize:12,color:"#666",marginBottom:8}}>Select which weekday's classes to conduct as Makeup on this weekend.</Text><View style={{flexDirection:"row",flexWrap:"wrap",gap:6,marginBottom:12}}>{["Mon","Tue","Wed","Thu","Fri"].map(d=>(<TouchableOpacity key={d} onPress={()=>setBulkSourceDay(d)} style={{paddingHorizontal:14,paddingVertical:8,borderRadius:8,backgroundColor:bulkSourceDay===d?"#1565C0":"#f5f5f5",borderWidth:2,borderColor:bulkSourceDay===d?"#1565C0":"#ddd"}}><Text style={{fontWeight:"700",fontSize:13,color:bulkSourceDay===d?"#fff":"#555"}}>{d}</Text></TouchableOpacity>))}</View></>)}
@@ -750,7 +757,7 @@ export default function EntryScreen() {
               {(["missed","makeup"] as const).map(t=>{const isWkndCheck=bulkDate?(()=>{const dd=new Date(bulkDate+"T00:00:00");return dd.getDay()===0||dd.getDay()===6;})():false;const disabled=isWkndCheck&&t==="missed";return(<TouchableOpacity key={t} disabled={disabled} onPress={()=>setBulkType(t)} style={{flex:1,paddingVertical:10,borderRadius:8,alignItems:"center",opacity:disabled?0.35:1,backgroundColor:bulkType===t?(t==="missed"?"#C62828":"#2E7D32"):"#f5f5f5",borderWidth:2,borderColor:bulkType===t?(t==="missed"?"#C62828":"#2E7D32"):"#ddd"}}><Text style={{fontWeight:"700",fontSize:13,color:bulkType===t?"#fff":"#555",textTransform:"capitalize"}}>{t}{disabled?" 🚫":""}</Text></TouchableOpacity>);})}
             </View>
             <Text style={{fontSize:12,fontWeight:"600",color:"#333",marginBottom:6,textTransform:"uppercase"}}>Remarks (optional)</Text>
-            {typeof window!=="undefined"&&<textarea value={bulkRemarks} onChange={(e:any)=>setBulkRemarks(e.target.value)} placeholder={bulkType==="missed"?"e.g. Classes missed due to Government Lockdown":"e.g. Makeup for missed Lec of 15 May 2026"} style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid #ddd",borderRadius:8,outline:"none",fontFamily:"inherit",minHeight:72,resize:"vertical",marginBottom:12}}/>}
+            {Platform.OS==="web" ? <textarea value={bulkRemarks} onChange={(e:any)=>setBulkRemarks(e.target.value)} placeholder={bulkType==="missed"?"e.g. Classes missed due to Government Lockdown":"e.g. Makeup for missed Lec of 15 May 2026"} style={{width:"100%",padding:"10px 12px",fontSize:13,border:"1px solid #ddd",borderRadius:8,outline:"none",fontFamily:"inherit",minHeight:72,resize:"vertical",marginBottom:12}}/> : <TextInput value={bulkRemarks} onChangeText={setBulkRemarks} placeholder={bulkType==="missed"?"e.g. Classes missed due to Government Lockdown":"e.g. Makeup for missed Lec of 15 May 2026"} placeholderTextColor="#999" multiline numberOfLines={3} style={{padding:10,fontSize:13,borderWidth:1,borderColor:"#ddd",borderRadius:8,fontFamily:"Inter_400Regular",minHeight:72,marginBottom:12}} />}
             {bulkResult?<Text style={{fontSize:13,color:"#2E7D32",marginBottom:12,textAlign:"center"}}>{bulkResult}</Text>:null}
             <View style={{flexDirection:"row",gap:8,marginTop:4}}>
               <TouchableOpacity onPress={()=>setShowBulkImport(false)} style={{flex:1,paddingVertical:12,borderRadius:8,alignItems:"center",backgroundColor:"#f5f5f5",borderWidth:1,borderColor:"#ddd"}}>
@@ -788,7 +795,7 @@ export default function EntryScreen() {
                   <Feather name="file-text" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>Export CSV</Text>
                 </TouchableOpacity>
-                <TouchableOpacity onPress={()=>{const inp=document.getElementById('entries-override-input') as HTMLInputElement;if(inp)inp.click();}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
+                <TouchableOpacity onPress={()=>{Alert.alert("Info", "This feature is available on the website version.");}} style={{flexDirection:"row",alignItems:"center",gap:4,backgroundColor:"#E65100",borderRadius:6,paddingHorizontal:10,paddingVertical:6}}>
                   <Feather name="refresh-cw" size={13} color="#fff"/>
                   <Text style={{color:"#fff",fontSize:12,fontWeight:"600"}}>{entriesOverrideLoading?"Uploading...":"Override"}</Text>
                 </TouchableOpacity>

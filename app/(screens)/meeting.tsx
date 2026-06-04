@@ -8,10 +8,10 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { printOrShareHtml } from "@/utils/printHtml";
 
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { fetchMeeting, fetchSchedule, fetchOptions, MeetingResult, ScheduleOptions } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
 
@@ -51,17 +51,18 @@ export default function MeetingScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
   );
 
   const [date, setDate] = useState(todayStr);
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [start, setStart] = useState("09:00 AM");
   const [end, setEnd] = useState("10:00 AM");
   const [selectedFaculty, setSelectedFaculty] = useState<string[]>([]);
@@ -281,7 +282,16 @@ ${deptEntries.length > 0 ? `
 
       <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={s.label}>Date</Text>
-        <TextInput style={s.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+        {Platform.OS === "web" ? (
+          <TextInput style={s.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+        ) : (
+          <>
+            <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>
+              <Text style={{color:date?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{date || "Select Date"}</Text>
+            </TouchableOpacity>
+            {showDatePicker && <DateTimePicker value={date?new Date(date):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setDate(`${y}-${m}-${dd}`);}}} />}
+          </>
+        )}
 
         <Text style={s.label}>Start Time</Text>
         <View style={s.optRow}>

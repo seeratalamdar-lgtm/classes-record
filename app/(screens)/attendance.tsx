@@ -8,10 +8,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import * as DocumentPicker from "expo-document-picker";
 
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchSchedule, fetchStudents, addStudent, deleteStudent,
@@ -169,11 +169,11 @@ export default function AttendanceScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
@@ -184,6 +184,7 @@ export default function AttendanceScreen() {
   const [selectedSubject, setSelectedSubject] = useState("");
   const [showClassPicker, setShowClassPicker] = useState(false);
   const [expandedDate, setExpandedDate] = useState<string | null>(null);
+  const [showManualDatePicker, setShowManualDatePicker] = useState(false);
   const [manualDate, setManualDate] = useState(todayStr);
   const [attendance, setAttendance] = useState<Record<string, string>>({});
   const [errorMsg, setErrorMsg] = useState("");
@@ -615,13 +616,16 @@ export default function AttendanceScreen() {
         <ScrollView>
           <View style={s.manualRow}>
             <Feather name="calendar" size={16} color={colors.primary} />
-            <TextInput
-              style={s.manualInput}
-              value={manualDate}
-              onChangeText={setManualDate}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.mutedForeground}
-            />
+            {Platform.OS === "web" ? (
+              <TextInput style={s.manualInput} value={manualDate} onChangeText={setManualDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+            ) : (
+              <>
+                <TouchableOpacity onPress={() => setShowManualDatePicker(true)} style={[s.manualInput, {justifyContent:"center"}]}>
+                  <Text style={{color:manualDate?colors.foreground:colors.mutedForeground,fontSize:14,fontFamily:"Inter_400Regular"}}>{manualDate || "Select Date"}</Text>
+                </TouchableOpacity>
+                {showManualDatePicker && <DateTimePicker value={manualDate?new Date(manualDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowManualDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setManualDate(`${y}-${m}-${dd}`);handleManualDateLoad();}}} />}
+              </>
+            )}
             <TouchableOpacity style={s.manualLoadBtn} onPress={handleManualDateLoad}>
               <Text style={s.manualLoadBtnTxt}>Load</Text>
             </TouchableOpacity>

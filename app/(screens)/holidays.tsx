@@ -9,25 +9,27 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams, useFocusEffect } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import { fetchHolidays, addHoliday, deleteHoliday } from "@/hooks/useApi";
 
 export default function HolidaysScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const qc = useQueryClient();
+  const [showStartPicker, setShowStartPicker] = useState(false);
+  const [showEndPicker, setShowEndPicker] = useState(false);
   const router = useRouter();
 
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation.lockAsync(ScreenOrientation.OrientationLock.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
@@ -123,7 +125,7 @@ export default function HolidaysScreen() {
             <Feather name="home" size={14} color="#fff" />
             <Text style={s.homeBtnTxt}>Home</Text>
           </TouchableOpacity>
-        </View>}
+        </View>
         <Text style={s.headerTitle}>Gazzetted Holidays</Text>
         <Text style={s.headerSub}>These days are excluded from ToBeConducted count</Text>
       </View>
@@ -151,22 +153,58 @@ export default function HolidaysScreen() {
           {/* Start date */}
           <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>{isRange ? "Start Date" : "Select Date"}</Text>
           {Platform.OS === "web" ? (
-            <input type="date" value={newDate} onChange={(e: any) => setNewDate(e.target.value)}
-              style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${colors.border}`, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground, backgroundColor: colors.muted, marginBottom: 10, boxSizing: "border-box" } as any}
-            />
+            <TextInput value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
           ) : (
-            <TextInput style={s.input} value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+            <>
+              <TouchableOpacity onPress={() => setShowStartPicker(true)} style={[s.input, {justifyContent:"center"}]}>
+                <Text style={{color: newDate ? colors.foreground : colors.mutedForeground, fontFamily:"Inter_400Regular", fontSize:14}}>{newDate || "Select Date"}</Text>
+              </TouchableOpacity>
+              {showStartPicker && (
+                <DateTimePicker
+                  value={newDate ? new Date(newDate) : new Date()}
+                  mode="date"
+                  display="calendar"
+                  onChange={(event, date) => {
+                    setShowStartPicker(false);
+                    if (date) {
+                      const y = date.getFullYear();
+                      const m = String(date.getMonth()+1).padStart(2,"0");
+                      const d = String(date.getDate()).padStart(2,"0");
+                      setNewDate(`${y}-${m}-${d}`);
+                    }
+                  }}
+                />
+              )}
+            </>
           )}
           {/* End date - only for range */}
           {isRange && (
             <>
               <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>End Date</Text>
               {Platform.OS === "web" ? (
-                <input type="date" value={newEndDate} onChange={(e: any) => setNewEndDate(e.target.value)}
-                  style={{ width: "100%", padding: "12px 14px", borderRadius: 12, border: `1px solid ${colors.border}`, fontSize: 15, fontFamily: "Inter_400Regular", color: colors.foreground, backgroundColor: colors.muted, marginBottom: 10, boxSizing: "border-box" } as any}
-                />
+                <TextInput value={newEndDate} onChangeText={setNewEndDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
               ) : (
-                <TextInput style={s.input} value={newEndDate} onChangeText={setNewEndDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+                <>
+                  <TouchableOpacity onPress={() => setShowEndPicker(true)} style={[s.input, {justifyContent:"center"}]}>
+                    <Text style={{color: newEndDate ? colors.foreground : colors.mutedForeground, fontFamily:"Inter_400Regular", fontSize:14}}>{newEndDate || "Select End Date"}</Text>
+                  </TouchableOpacity>
+                  {showEndPicker && (
+                    <DateTimePicker
+                      value={newEndDate ? new Date(newEndDate) : new Date()}
+                      mode="date"
+                      display="calendar"
+                      onChange={(event, date) => {
+                        setShowEndPicker(false);
+                        if (date) {
+                          const y = date.getFullYear();
+                          const m = String(date.getMonth()+1).padStart(2,"0");
+                          const d = String(date.getDate()).padStart(2,"0");
+                          setNewEndDate(`${y}-${m}-${d}`);
+                        }
+                      }}
+                    />
+                  )}
+                </>
               )}
             </>
           )}

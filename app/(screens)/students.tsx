@@ -174,7 +174,7 @@ export default function StudentsScreen() {
   async function handleBulkUpload() {
     if (!selectedClass) { setError("Select a class first"); return; }
     if (typeof window === "undefined") return;
-    // Use native file input for reliable web upload
+    if (Platform.OS !== "web") { Alert.alert("Info", "CSV upload is available on the website version."); return; }
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".csv,.txt";
@@ -217,6 +217,7 @@ export default function StudentsScreen() {
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
+    if (Platform.OS !== "web") { Alert.alert("Info", "CSV download is available on the website version."); return; }
     const a = document.createElement("a"); a.href = url;
     a.download = `${className}-students.csv`; a.click();
     URL.revokeObjectURL(url);
@@ -229,6 +230,7 @@ export default function StudentsScreen() {
     ].join("\n");
     const blob = new Blob([rows], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
+    if (Platform.OS !== "web") { Alert.alert("Info", "CSV download is available on the website version."); return; }
     const a = document.createElement("a"); a.href = url;
     a.download = `${className}-${subject}-students.csv`; a.click();
     URL.revokeObjectURL(url);

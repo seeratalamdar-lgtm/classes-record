@@ -8,10 +8,10 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 import { printOrShareHtml } from "@/utils/printHtml";
 
 import { useColors } from "@/hooks/useColors";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   fetchSchedule, fetchOptions, addScheduleEntry, deleteScheduleRow,
   importScheduleExcel, importOptionsExcel, ScheduleRow, ScheduleOptions,
@@ -148,11 +148,11 @@ export default function ScheduleScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.LANDSCAPE).catch(() => {});
+        
       }
       return () => {
         if (Platform.OS !== "web") {
-          ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+          
         }
       };
     }, [])
@@ -173,6 +173,7 @@ export default function ScheduleScreen() {
   const [showOverride, setShowOverride] = useState(false);
   const [showBulkImport, setShowBulkImport] = useState(false);
   const [bulkDate, setBulkDate] = useState("");
+  const [showBulkDatePicker, setShowBulkDatePicker] = useState(false);
   const [bulkType, setBulkType] = useState<"missed"|"makeup">("missed");
   const [bulkLoading, setBulkLoading] = useState(false);
   const [bulkResult, setBulkResult] = useState("");
@@ -352,6 +353,7 @@ export default function ScheduleScreen() {
     const csv = [header.join(","), ...csvRows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
     const url = URL.createObjectURL(blob);
+    if (Platform.OS !== "web") { Alert.alert("Info", "CSV export is available on the website version."); return; }
     const a = document.createElement("a");
     a.href = url; a.download = "WeeklySchedule.csv"; a.click();
     URL.revokeObjectURL(url);
@@ -588,9 +590,9 @@ export default function ScheduleScreen() {
       <View style={s.header}>
         <View style={s.topRow}>
           <TouchableOpacity style={s.homeBtn} onPress={() => {
-              if (typeof window !== "undefined" && window.history.length > 1) {
+              try {
                 router.back();
-              } else {
+              } catch {
                 router.replace("/(screens)/my-schedules" as never);
               }
             }}>
@@ -858,10 +860,16 @@ export default function ScheduleScreen() {
             <Text style={{fontSize:18,fontWeight:"700",color:"#1A237E",marginBottom:4}}>Import Day Schedule</Text>
             <Text style={{fontSize:13,color:"#555",marginBottom:20}}>Select a date and type to bulk import all scheduled classes for that weekday.</Text>
             <Text style={{fontSize:13,fontWeight:"600",color:"#333",marginBottom:6}}>Date</Text>
-            <View style={{borderWidth:1,borderColor:"#ddd",borderRadius:8,marginBottom:16}}>
-              {typeof window!=="undefined" && (
-                <input type="date" value={bulkDate} onChange={(e:any)=>setBulkDate(e.target.value)}
-                  style={{width:"100%",padding:"10px 12px",fontSize:14,border:"none",borderRadius:8,outline:"none",fontFamily:"inherit"}} />
+            <View style={{marginBottom:16}}>
+              {Platform.OS === "web" ? (
+                <TextInput value={bulkDate} onChangeText={setBulkDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
+              ) : (
+                <>
+                  <TouchableOpacity onPress={() => setShowBulkDatePicker(true)} style={{padding:12,borderRadius:8,borderWidth:1,borderColor:"#ddd",backgroundColor:"#fff"}}>
+                    <Text style={{color:bulkDate?"#000":"#999",fontSize:14,fontFamily:"Inter_400Regular"}}>{bulkDate || "Select Date"}</Text>
+                  </TouchableOpacity>
+                  {showBulkDatePicker && <DateTimePicker value={bulkDate?new Date(bulkDate):new Date()} mode="date" display="calendar" onChange={(e,d)=>{setShowBulkDatePicker(false);if(d){const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,"0");const dd=String(d.getDate()).padStart(2,"0");setBulkDate(`${y}-${m}-${dd}`);}}} />}
+                </>
               )}
             </View>
             <Text style={{fontSize:13,fontWeight:"600",color:"#333",marginBottom:8}}>Entry Type</Text>
