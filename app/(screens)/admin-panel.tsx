@@ -173,9 +173,8 @@ export default function AdminPanelScreen() {
       if (Platform.OS === "web") { const a = document.createElement("a"); a.href = url; a.download = "download.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
       URL.revokeObjectURL(url);
     } else {
-      const csvFile = new FileSystem.File(FileSystem.Paths.document, "users.csv");
-      csvFile.write(csv);
-      const filePath = csvFile.uri;
+      const b64 = btoa(unescape(encodeURIComponent(csv)));
+      const filePath = `data:text/csv;base64,${b64}`;
       await Sharing.shareAsync(filePath, { mimeType: "text/csv" });
     }
   }

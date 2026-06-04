@@ -447,9 +447,8 @@ export default function EntryScreen() {
         if (Platform.OS === "web") {
           const r2 = await fetch(uri); text = await r2.text();
         } else {
-          const FSMod = await import("expo-file-system");
-          const fsFile = new FSMod.File(uri);
-          text = await fsFile.text();
+          const response = await fetch(uri);
+          text = await response.text();
         }
       } catch(fe) { if (file) text = await (file as any).text(); }
       text = text.replace(/^﻿/, "");

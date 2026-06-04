@@ -259,8 +259,8 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
       let text = "";
       if (uri && !file) {
         try {
-          const fsFile = new FileSystem.File(uri);
-          text = await fsFile.text();
+          const response = await fetch(uri);
+          text = await response.text();
         } catch {
           try {
             const r = await fetch(uri);
@@ -691,8 +691,8 @@ export async function importStudentsExcel(scheduleId: number, className: string,
       let text = "";
       if (uri && !file) {
         try {
-          const fsFile = new FileSystem.File(uri);
-          text = await fsFile.text();
+          const response = await fetch(uri);
+          text = await response.text();
         } catch {
           try {
             const r = await fetch(uri);
