@@ -518,7 +518,7 @@ export default function ScheduleGenerator() {
 
   const handleUpload = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: "text/csv" });
+      const res = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"] });
       if (res.canceled) return;
       const asset = res.assets?.[0] || (res as any);
       const uri = asset.uri;
