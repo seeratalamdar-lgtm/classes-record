@@ -523,8 +523,24 @@ export default function ScheduleGenerator() {
       const asset = res.assets?.[0] || (res as any);
       const uri = asset.uri;
       setFileName(asset.name || "draft.csv");
-      const response = await fetch(uri);
-      const text = await response.text();
+      let text = "";
+      if (Platform.OS === "web") {
+        const response = await fetch(uri);
+        text = await response.text();
+      } else {
+        try {
+          const FileSystem = await import("expo-file-system");
+          text = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
+        } catch (fsErr) {
+          // Fallback: try fetch for content:// URIs
+          try {
+            const response = await fetch(uri);
+            text = await response.text();
+          } catch (fetchErr) {
+            throw new Error("Could not read file. Please try again.");
+          }
+        }
+      }
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       const headers = lines[0].split(",").map(h => h.trim().replace(/\r/,"").replace(/"/g,""));
       const data = lines.slice(1).map(line => {

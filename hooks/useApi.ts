@@ -256,11 +256,20 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
   if (isCSV) {
     try {
       let text = "";
-      if (file) {
+      if (uri && !file) {
+        try {
+          const FileSystem = await import("expo-file-system");
+          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" as any });
+        } catch {
+          try {
+            const r = await fetch(uri);
+            text = await r.text();
+          } catch {
+            throw new Error("Could not read file. Please try again.");
+          }
+        }
+      } else if (file && typeof file.text === "function") {
         text = await file.text();
-      } else if (typeof fetch !== "undefined" && uri) {
-        const r = await fetch(uri);
-        text = await r.text();
       }
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       const headers = lines[0].split(',').map(h => h.trim().replace(/^"|"$/g, ''));
@@ -679,11 +688,20 @@ export async function importStudentsExcel(scheduleId: number, className: string,
   if (isCSV) {
     try {
       let text = "";
-      if (file) {
+      if (uri && !file) {
+        try {
+          const FileSystem = await import("expo-file-system");
+          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" as any });
+        } catch {
+          try {
+            const r = await fetch(uri);
+            text = await r.text();
+          } catch {
+            throw new Error("Could not read file. Please try again.");
+          }
+        }
+      } else if (file && typeof file.text === "function") {
         text = await file.text();
-      } else if (typeof fetch !== "undefined" && uri) {
-        const r = await fetch(uri);
-        text = await r.text();
       }
       const lines = text.split(/\r?\n/).filter(l => l.trim());
       const headers = lines[0].split(",").map(h => h.trim().replace(/^"|"$/g, ""));

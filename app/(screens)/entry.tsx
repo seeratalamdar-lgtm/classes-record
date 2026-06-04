@@ -443,7 +443,14 @@ export default function EntryScreen() {
       const _domain = process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online";
       const schedId = scheduleId || params?.scheduleId;
       let text = "";
-      try { const r2 = await fetch(uri); text = await r2.text(); } catch(fe) { if (file) text = await (file as any).text(); }
+      try {
+        if (Platform.OS === "web") {
+          const r2 = await fetch(uri); text = await r2.text();
+        } else {
+          const { readAsStringAsync } = await import("expo-file-system");
+          text = await readAsStringAsync(uri, { encoding: "utf8" });
+        }
+      } catch(fe) { if (file) text = await (file as any).text(); }
       text = text.replace(/^﻿/, "");
       const lines = text.split("\n").map((l:string)=>l.trim()).filter(Boolean);
       const headers = lines[0].split(",").map((h:string)=>h.replace(/^"|"$/g,"").trim());
