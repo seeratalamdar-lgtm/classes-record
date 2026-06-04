@@ -18,11 +18,6 @@ export async function printOrShareHtml(html: string, shareDialogTitle: string): 
     }, 500);
   } else {
     const { uri } = await Print.printToFileAsync({ html, base64: false });
-    const canShare = await Sharing.isAvailableAsync();
-    if (canShare) {
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: shareDialogTitle });
-    } else {
-      Alert.alert("Saved", `PDF saved to: ${uri}`);
-    }
+    await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: shareDialogTitle, UTI: "com.adobe.pdf" });
   }
 }

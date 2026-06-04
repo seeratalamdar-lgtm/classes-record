@@ -518,7 +518,7 @@ export default function ScheduleGenerator() {
 
   const handleUpload = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"] });
+      const res = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"], copyToCacheDirectory: true });
       if (res.canceled) return;
       const asset = res.assets?.[0] || (res as any);
       const uri = asset.uri;
@@ -529,9 +529,7 @@ export default function ScheduleGenerator() {
         text = await response.text();
       } else {
         try {
-          const cacheUri = (FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "") + "upload_draft.csv";
-          await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
+          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" });
         } catch (fsErr: any) {
           throw new Error("Could not read file: " + fsErr.message);
         }
@@ -547,7 +545,7 @@ export default function ScheduleGenerator() {
       setCsvData(data);
       setGenerated([]);
       setError("");
-    } catch(e: any) { setError("Upload failed: " + JSON.stringify({msg: e.message, name: e.name, stack: (e.stack||"").slice(0,200)})); }
+    } catch(e: any) { setError("Upload failed: " + e.message); }
   };
 
   const handleGenerate = () => {
