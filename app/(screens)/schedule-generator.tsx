@@ -530,15 +530,12 @@ export default function ScheduleGenerator() {
       } else {
         try {
           const FileSystem = await import("expo-file-system");
-          text = await FileSystem.readAsStringAsync(uri, { encoding: FileSystem.EncodingType.UTF8 });
-        } catch (fsErr) {
-          // Fallback: try fetch for content:// URIs
-          try {
-            const response = await fetch(uri);
-            text = await response.text();
-          } catch (fetchErr) {
-            throw new Error("Could not read file. Please try again.");
-          }
+          // Copy content:// URI to cache first, then read
+          const cacheUri = FileSystem.cacheDirectory + "upload_draft.csv";
+          await FileSystem.copyAsync({ from: uri, to: cacheUri });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
+        } catch (fsErr: any) {
+          throw new Error("Could not read file: " + fsErr.message);
         }
       }
       const lines = text.split(/\r?\n/).filter(l => l.trim());

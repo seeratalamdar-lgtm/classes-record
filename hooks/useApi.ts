@@ -259,7 +259,9 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
       if (uri && !file) {
         try {
           const FileSystem = await import("expo-file-system");
-          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" as any });
+          const cacheUri = (FileSystem.cacheDirectory || "") + "upload_temp.csv";
+          await FileSystem.copyAsync({ from: uri, to: cacheUri });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
         } catch {
           try {
             const r = await fetch(uri);
@@ -691,7 +693,9 @@ export async function importStudentsExcel(scheduleId: number, className: string,
       if (uri && !file) {
         try {
           const FileSystem = await import("expo-file-system");
-          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" as any });
+          const cacheUri = (FileSystem.cacheDirectory || "") + "upload_temp.csv";
+          await FileSystem.copyAsync({ from: uri, to: cacheUri });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
         } catch {
           try {
             const r = await fetch(uri);
