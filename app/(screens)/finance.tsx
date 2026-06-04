@@ -188,8 +188,7 @@ export default function FinanceScreen() {
   const { data: staffList = [], refetch: refetchStaff } = useQuery({
     queryKey: ["supportStaff", selectedScheduleId],
     queryFn: () => fetchSupportStaff(selectedScheduleId ?? 0),
-    enabled: !!selectedScheduleId,
-    enabled: !!finUser,
+    enabled: !!selectedScheduleId && !!finUser,
   });
 
   // ── Load payment rows (auto-fills amount from stored rate when no payment exists) ──
@@ -373,6 +372,7 @@ export default function FinanceScreen() {
         } else { setRatesBulkLoading(false); setErrorMsg(res.error ?? "Import failed"); }
       } catch (e: any) { setRatesBulkLoading(false); setErrorMsg("Upload failed: " + e.message); }
     };
+    if (Platform.OS !== "web") { showAlert("This feature is only available on web browser"); return; }
     if (Platform.OS === "web") {
       const input = document.createElement("input");
       input.type = "file";

@@ -79,7 +79,7 @@ export default function StudentPortalScreen() {
   // Load photo
   useEffect(() => {
     if (session?.username && typeof window !== "undefined") {
-      const p = localStorage.getItem(PHOTO_KEY + session.username);
+      const p = typeof localStorage !== "undefined" ? localStorage.getItem(PHOTO_KEY + session.username) : null;
       if (p) setPhotoUri(p);
     }
   }, [session?.username]);
@@ -92,13 +92,13 @@ export default function StudentPortalScreen() {
     if (res.success) {
       const s: StudentSession = { studentName: res.studentName, rollNo: res.rollNo, className: res.className, scheduleId: res.scheduleId, scheduleName: res.scheduleName, username: username.trim() };
       setSession(s);
-      if (typeof window !== "undefined") localStorage.setItem(SESSION_KEY, JSON.stringify(s));
+      if (typeof localStorage !== "undefined") localStorage.setItem(SESSION_KEY, JSON.stringify(s));
     } else { setErrorMsg(res.message || "Login failed"); }
   }
 
   function handleSignOut() {
     setSession(null);
-    if (typeof window !== "undefined") localStorage.removeItem(SESSION_KEY);
+    if (typeof localStorage !== "undefined") localStorage.removeItem(SESSION_KEY);
   }
 
   async function handleChangePassword() {
@@ -117,7 +117,8 @@ export default function StudentPortalScreen() {
 
   function handlePhotoChange() {
     if (typeof window === "undefined" || !session) return;
-    const input = document.createElement("input");
+    if (Platform.OS !== "web") { showAlert("This feature is only available on web browser"); return; }
+const input = document.createElement("input");
     input.type = "file"; input.accept = "image/*";
     input.onchange = (e: any) => {
       const file = e.target.files[0];
@@ -126,7 +127,8 @@ export default function StudentPortalScreen() {
       const reader = new FileReader();
       reader.onload = (ev: any) => {
         // Compress to max 300x300
-        const img = document.createElement("img");
+        if (Platform.OS !== "web") { showAlert("Photo upload is only available on web browser"); return; }
+const img = document.createElement("img");
         img.onload = () => {
           const canvas = document.createElement("canvas");
           const MAX = 300;
@@ -137,7 +139,7 @@ export default function StudentPortalScreen() {
           canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
           const compressed = canvas.toDataURL("image/jpeg", 0.7);
           setPhotoUri(compressed);
-          localStorage.setItem(PHOTO_KEY + session.username, compressed);
+          if (typeof localStorage !== "undefined") localStorage.setItem(PHOTO_KEY + session.username, compressed);
         };
         img.src = ev.target.result;
       };

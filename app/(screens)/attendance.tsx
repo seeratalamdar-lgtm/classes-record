@@ -312,7 +312,7 @@ export default function AttendanceScreen() {
       qc.refetchQueries({ queryKey: ["roster", scheduleId, selectedClass] });
       // Close expanded panel so user can see updated status
       setExpandedDate(null);
-      if (typeof window !== "undefined") window.alert(`✅ Attendance saved for ${fmtDateLabel(parseSlot(slotKey).date)}.`); else Alert.alert("Saved", `Attendance saved for ${fmtDateLabel(parseSlot(slotKey).date)}.`);
+      Alert.alert("Saved", `Attendance saved for ${fmtDateLabel(parseSlot(slotKey).date)}.`);
     },
     onError: (e: any) => setErrorMsg("Could not save attendance: " + (e?.message || "")),
   });
