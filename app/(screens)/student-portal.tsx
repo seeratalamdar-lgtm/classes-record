@@ -37,9 +37,7 @@ export default function StudentPortalScreen() {
   const params = useLocalSearchParams<{ scheduleId?: string; scheduleTitle?: string }>();
 
   useFocusEffect(useCallback(() => {
-    if (Platform.OS !== "web")
-      
-  }, []));
+      }, []));
 
   const [session, setSession] = useState<StudentSession | null>(null);
   const [loading, setLoading] = useState(true);

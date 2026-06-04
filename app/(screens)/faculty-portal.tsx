@@ -20,9 +20,7 @@ export default function FacultyPortalScreen() {
   const router = useRouter();
 
   useFocusEffect(useCallback(() => {
-    if (Platform.OS !== "web")
-      
-  }, []));
+      }, []));
 
   const [session, setSession] = useState<FacultySession | null>(null);
   const [showNotes, setShowNotes] = useState(false);

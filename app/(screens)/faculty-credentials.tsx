@@ -27,9 +27,7 @@ export default function FacultyCredentialsScreen() {
   const scheduleId = Number(rawId);
 
   useFocusEffect(useCallback(() => {
-    if (Platform.OS !== "web")
-      
-  }, []));
+      }, []));
 
   const { data: accounts = [], isLoading } = useQuery({
     queryKey: ["facultyAccounts", scheduleId],
