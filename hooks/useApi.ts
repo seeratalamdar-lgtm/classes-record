@@ -1,3 +1,4 @@
+import * as FileSystem from "expo-file-system";
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export interface ScheduleRow {
@@ -258,10 +259,10 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
       let text = "";
       if (uri && !file) {
         try {
-          const FileSystem = await import("expo-file-system");
-          const cacheUri = (FileSystem.cacheDirectory || "") + "upload_temp.csv";
+          const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "";
+          const cacheUri = cacheDir + "upload_temp.csv";
           await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
         } catch {
           try {
             const r = await fetch(uri);
@@ -692,10 +693,10 @@ export async function importStudentsExcel(scheduleId: number, className: string,
       let text = "";
       if (uri && !file) {
         try {
-          const FileSystem = await import("expo-file-system");
-          const cacheUri = (FileSystem.cacheDirectory || "") + "upload_temp.csv";
+          const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "";
+          const cacheUri = cacheDir + "upload_temp.csv";
           await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
         } catch {
           try {
             const r = await fetch(uri);

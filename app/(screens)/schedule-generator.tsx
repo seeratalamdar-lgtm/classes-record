@@ -529,11 +529,9 @@ export default function ScheduleGenerator() {
         text = await response.text();
       } else {
         try {
-          const FileSystem = await import("expo-file-system");
-          // Copy content:// URI to cache first, then read
-          const cacheUri = FileSystem.cacheDirectory + "upload_draft.csv";
+          const cacheUri = (FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "") + "upload_draft.csv";
           await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" as any });
+          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
         } catch (fsErr: any) {
           throw new Error("Could not read file: " + fsErr.message);
         }
