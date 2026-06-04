@@ -1,4 +1,3 @@
-import * as FileSystem from "expo-file-system";
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
 
 export interface ScheduleRow {
