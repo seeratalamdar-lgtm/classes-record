@@ -39,9 +39,7 @@
       "expo-web-browser",
       "expo-screen-orientation",
       "@react-native-community/datetimepicker",
-      "expo-file-system",
-      "expo-print",
-      "expo-sharing"
+      "expo-file-system"
     ],
     "extra": {
       "eas": {
