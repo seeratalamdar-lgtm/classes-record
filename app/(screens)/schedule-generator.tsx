@@ -529,7 +529,8 @@ export default function ScheduleGenerator() {
         text = await response.text();
       } else {
         try {
-          text = await FileSystem.readAsStringAsync(uri, { encoding: "utf8" });
+          const file = new FileSystem.File(uri);
+          text = await file.text();
         } catch (fsErr: any) {
           throw new Error("Could not read file: " + fsErr.message);
         }
@@ -708,9 +709,9 @@ export default function ScheduleGenerator() {
             document.body.removeChild(a);URL.revokeObjectURL(url);
           } else {
             try {
-              const dir = FileSystem.documentDirectory || FileSystem.cacheDirectory || "";
-              const path = dir + "Testing_Schedule.csv";
-              await FileSystem.writeAsStringAsync(path, csv, { encoding: "utf8" });
+              const file = new FileSystem.File(FileSystem.Paths.cache, "Testing_Schedule.csv");
+              file.write(csv);
+              const path = file.uri;
               const canShare = await Sharing.isAvailableAsync();
               if (canShare) {
                 await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });

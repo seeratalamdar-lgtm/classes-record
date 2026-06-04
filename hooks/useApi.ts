@@ -259,10 +259,8 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
       let text = "";
       if (uri && !file) {
         try {
-          const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "";
-          const cacheUri = cacheDir + "upload_temp.csv";
-          await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
+          const fsFile = new FileSystem.File(uri);
+          text = await fsFile.text();
         } catch {
           try {
             const r = await fetch(uri);
@@ -693,10 +691,8 @@ export async function importStudentsExcel(scheduleId: number, className: string,
       let text = "";
       if (uri && !file) {
         try {
-          const cacheDir = FileSystem.cacheDirectory ?? FileSystem.documentDirectory ?? "";
-          const cacheUri = cacheDir + "upload_temp.csv";
-          await FileSystem.copyAsync({ from: uri, to: cacheUri });
-          text = await FileSystem.readAsStringAsync(cacheUri, { encoding: "utf8" });
+          const fsFile = new FileSystem.File(uri);
+          text = await fsFile.text();
         } catch {
           try {
             const r = await fetch(uri);
