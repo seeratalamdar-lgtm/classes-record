@@ -447,7 +447,7 @@ export default function EntryScreen() {
         if (Platform.OS === "web") {
           const r2 = await fetch(uri); text = await r2.text();
         } else {
-          const { readAsStringAsync } = await import("expo-file-system");
+          const { readAsStringAsync } = await import("expo-file-system/legacy");
           text = await readAsStringAsync(uri, { encoding: "utf8" });
         }
       } catch(fe) { if (file) text = await (file as any).text(); }
