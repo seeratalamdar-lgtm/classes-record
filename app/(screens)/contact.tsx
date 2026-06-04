@@ -6,7 +6,6 @@ import {
 import { Feather } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
-import * as ScreenOrientation from "expo-screen-orientation";
 
 import { useColors } from "@/hooks/useColors";
 
@@ -36,7 +35,7 @@ export default function ContactScreen() {
   useFocusEffect(
     useCallback(() => {
       if (Platform.OS !== "web") {
-        ScreenOrientation?.lockAsync?.(ScreenOrientation?.OrientationLock?.PORTRAIT_UP).catch(() => {});
+        
       }
     }, [])
   );
