@@ -6,10 +6,8 @@ module.exports.transform = async function(params) {
       params = {
         ...params,
         src: params.src
-          // Replace ALL private field declarations (with or without indentation)
-          .replace(/(\s)#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, '$1_$2')
-          // Replace private field access: "this.#fieldName"
-          .replace(/\bthis\.#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, 'this._$1'),
+          .replace(/\bthis\.#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, 'this._$1')
+          .replace(/([ \t])#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, '$1_$2'),
       };
     }
   }
