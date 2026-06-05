@@ -880,7 +880,7 @@ export default function AttendanceScreen() {
                   <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: colors.foreground, marginBottom: 8 }}>
                     {studentSummary.studentName} · {studentSummary.regNo}
                   </Text>
-                  {studentSummary.rows.map(row => {
+                  {(studentSummary.rows ?? []).map(row => {
                     const pctColor = row.percentage >= 75 ? STATUS_COLORS.P : row.percentage >= 60 ? STATUS_COLORS.L : STATUS_COLORS.A;
                     return (
                       <View key={row.className} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 6, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -953,7 +953,7 @@ export default function AttendanceScreen() {
                     <Text style={{ fontFamily: "Inter_700Bold", fontSize: 14, color: colors.foreground, marginBottom: 8 }}>
                       {studentSummary.studentName} · {studentSummary.regNo}
                     </Text>
-                    {studentSummary.rows.map(row => {
+                    {(studentSummary.rows ?? []).map(row => {
                       const pctColor = row.percentage >= 75 ? STATUS_COLORS.P : row.percentage >= 60 ? STATUS_COLORS.L : STATUS_COLORS.A;
                       return (
                         <View key={row.className} style={{ flexDirection: "row", alignItems: "center", paddingVertical: 5, borderTopWidth: 1, borderTopColor: colors.border }}>
@@ -1000,7 +1000,7 @@ export default function AttendanceScreen() {
             <ScrollView horizontal style={s.rosterRight} showsHorizontalScrollIndicator>
               <View>
                 <View style={{ flexDirection: "row" }}>
-                  {roster.dates.map(d => {
+                  {roster.dates.map((d: any) => {
                     const [iso, time] = d.split("|");
                     const [, m, dy] = iso.split("-");
                     const label = `${dy}-${m}`;
@@ -1018,12 +1018,12 @@ export default function AttendanceScreen() {
                     </View>
                   ))}
                 </View>
-                {roster.rows.map((r, ri) => {
+                {roster.rows.map((r: any, ri: number) => {
                   const pct = r.percentage;
                   const pctColor = pct >= 75 ? STATUS_COLORS.P : pct >= 60 ? STATUS_COLORS.L : STATUS_COLORS.A;
                   return (
                     <View key={r.rollNo} style={{ flexDirection: "row", backgroundColor: ri % 2 === 0 ? colors.card : colors.muted }}>
-                      {roster.dates.map(d => {
+                      {roster.dates.map((d: any) => {
                         const st = r.records[d] ?? "";
                         return (
                           <View key={d} style={[s.rosterCell, { width: 42, backgroundColor: st ? STATUS_BG[st as keyof typeof STATUS_BG] : undefined }]}>

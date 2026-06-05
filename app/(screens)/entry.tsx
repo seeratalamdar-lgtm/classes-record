@@ -17,7 +17,6 @@ import DateTimePicker from "@react-native-community/datetimepicker";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchSchedule, fetchOptions, saveEntry, importEntriesExcel,
-  fetchStudentEmailsForNotify,
   ScheduleRow, ScheduleOptions,
 } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
