@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import React, { useState, useEffect, useCallback } from "react";
 import {

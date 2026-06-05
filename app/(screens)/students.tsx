@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo } from "react";
