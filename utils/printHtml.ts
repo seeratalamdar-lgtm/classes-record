@@ -1,5 +1,4 @@
 import { Platform } from "react-native";
-import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import { Alert } from "react-native";
 
@@ -18,10 +17,12 @@ export async function printOrShareHtml(html: string, shareDialogTitle: string): 
     }, 500);
   } else {
     try {
-      const { uri } = await Print.printToFileAsync({ html, base64: false });
-      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: shareDialogTitle, UTI: "com.adobe.pdf" });
+      const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
+      const path = (cacheDirectory ?? "") + "report.html";
+      await writeAsStringAsync(path, html, { encoding: EncodingType.UTF8 });
+      await Sharing.shareAsync(path, { mimeType: "text/html", dialogTitle: shareDialogTitle });
     } catch (e: any) {
-      throw new Error("PDF error: " + e.message + " | " + JSON.stringify(e));
+      Alert.alert("Error", "Could not generate PDF. Please try again.");
     }
   }
 }
