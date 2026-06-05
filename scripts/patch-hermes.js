@@ -5,6 +5,9 @@ const files = [
   'node_modules/react-native/src/private/webapis/geometry/DOMRectReadOnly.js',
   'node_modules/react-native/src/private/webapis/geometry/DOMRect.js',
   'node_modules/react-native/src/private/webapis/geometry/DOMRectList.js',
+  'node_modules/react-native/src/private/webapis/errors/DOMException.js',
+  'node_modules/react-native/src/private/webapis/performance/PerformanceEntry.js',
+  'node_modules/react-native/src/private/webapis/performance/EventTiming.js',
   'node_modules/react-native/Libraries/Animated/nodes/AnimatedNode.js',
   'node_modules/react-native/Libraries/Animated/nodes/AnimatedValue.js',
   'node_modules/react-native/Libraries/Animated/nodes/AnimatedTransform.js',
@@ -26,8 +29,6 @@ for (const relPath of files) {
   }
 
   let content = fs.readFileSync(filePath, 'utf8');
-
-  // Find all private field names used in this file
   const privateFields = new Set();
   const matches = content.matchAll(/#([a-zA-Z_][a-zA-Z0-9_]*)/g);
   for (const m of matches) {
@@ -40,10 +41,7 @@ for (const relPath of files) {
   }
 
   console.log('Patching', relPath, '- fields:', [...privateFields].join(', '));
-
-  // Replace private field declarations and usages
   for (const field of privateFields) {
-    // Replace declarations: #field: type; or #field =
     content = content.replace(new RegExp(`#${field}\\b`, 'g'), `_${field}`);
   }
 
