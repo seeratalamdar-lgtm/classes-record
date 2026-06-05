@@ -10,18 +10,18 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online"
-      },
-      "prebuildCommand": "node scripts/patch-hermes.js"
+        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online",
+        "NPM_CONFIG_IGNORE_SCRIPTS": "false"
+      }
     },
     "production": {
       "android": {
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online"
-      },
-      "prebuildCommand": "node scripts/patch-hermes.js"
+        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online",
+        "NPM_CONFIG_IGNORE_SCRIPTS": "false"
+      }
     },
     "debug": {
       "android": {
