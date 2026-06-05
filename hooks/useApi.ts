@@ -751,7 +751,7 @@ export async function fetchMeeting(date: string, start: string, end: string, fac
 
 // Exam stubs
 export interface ExamWeights { quiz: number; assignment: number; mid: number; final: number; }
-export interface ExamMarkRow { studentId: number; rollNo: string; name: string; quiz?: number; assignment?: number; mid?: number; final?: number; }
+export interface ExamMarkRow { studentId: number; rollNo: string; name: string; quiz?: number | null; assignment?: number | null; mid?: number | null; final?: number | null; }
 export async function fetchExamWeights(scheduleId: number): Promise<ExamWeights> { return { quiz: 10, assignment: 10, mid: 20, final: 60 }; }
 export async function saveExamWeights(scheduleId: number, weights: ExamWeights): Promise<{success: boolean; error?: string}> { return { success: true }; }
 export async function fetchExamMarks(scheduleId: number, className: string): Promise<ExamMarkRow[]> { return []; }

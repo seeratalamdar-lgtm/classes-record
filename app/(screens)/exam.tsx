@@ -150,10 +150,10 @@ export default function ExamScreen() {
   function startEdit(row: ExamMarkRow) {
     setEditingRow(row.rollNo);
     setEditVals({
-      quiz: row.quiz ?? "",
-      assignment: row.assignment ?? "",
-      mid: row.mid ?? "",
-      final: row.final ?? "",
+      quiz: String(row.quiz ?? ""),
+      assignment: String(row.assignment ?? ""),
+      mid: String(row.mid ?? ""),
+      final: String(row.final ?? ""),
     });
   }
 

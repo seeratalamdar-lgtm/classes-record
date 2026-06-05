@@ -652,7 +652,7 @@ export default function EntryScreen() {
         <TouchableOpacity
           style={[s.saveBtn, !canSave && s.saveBtnDisabled]}
           disabled={!canSave}
-          onPress={() => saveMutation.mutate({ Faculty: faculty, Subject: subject, Class: cls, Date: date, Location: location, Time: startTime, EndTime: endTime, Type: type, User: user!, scheduleId })}
+          onPress={() => saveMutation.mutate({ Faculty: faculty, Subject: subject, Class: cls, Date: date, Location: location, Time: startTime, EndTime: endTime, Type: type, User: user! } as any)}
         >
           {saveMutation.isPending
             ? <ActivityIndicator color="#fff" />
