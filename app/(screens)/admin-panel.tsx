@@ -172,7 +172,7 @@ export default function AdminPanelScreen() {
       if (Platform.OS === "web") { const a = document.createElement("a"); a.href = url; a.download = "download.csv"; document.body.appendChild(a); a.click(); document.body.removeChild(a); }
       URL.revokeObjectURL(url);
     } else {
-      const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
+      const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system");
       const filePath = (cacheDirectory ?? "") + "users.csv";
       await writeAsStringAsync(filePath, csv, { encoding: EncodingType.UTF8 });
       await Sharing.shareAsync(filePath, { mimeType: "text/csv" });
