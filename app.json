@@ -30,7 +30,8 @@
         "android.permission.READ_MEDIA_VIDEO",
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.INTERNET"
-      ]
+      ],
+      "jsEngine": "jsc"
     },
     "web": {
       "favicon": "./assets/images/icon.png"
