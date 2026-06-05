@@ -257,7 +257,7 @@ export default function EntryScreen() {
       const res = await fetch("https://" + _domain + "/api/schedule/bulk-day-import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleId: schedId, date: bulkDate, type: bulkType, remarks: bulkRemarks, userEmail: user?.email || "", sourceDay: bulkSourceDay || "" })
+        body: JSON.stringify({ scheduleId: (schedId as any), date: bulkDate, type: bulkType, remarks: bulkRemarks, userEmail: user?.email || "", sourceDay: bulkSourceDay || "" })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Import failed");
