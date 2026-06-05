@@ -303,7 +303,7 @@ export default function AttendanceScreen() {
         rollNo: s.rollNo,
         status: attendance[s.rollNo] ?? "P",
       }));
-      return markAttendance(scheduleId, selectedClass, date, sessionTime, records);
+      return markAttendance(scheduleId, selectedClass, date, sessionTime, records as any);
     },
     onSuccess: () => {
       const slotKey = expandedDate ?? manualDate;
@@ -344,7 +344,7 @@ export default function AttendanceScreen() {
     setStudentSummary(null);
     const result = await fetchStudentAttendanceSummary(scheduleId, rosterSearchReg.trim());
     setSummaryLoading(false);
-    setStudentSummary(result);
+    setStudentSummary(Array.isArray(result) ? result[0] ?? null : result);
   }
 
   async function handleBulkUpload() {
@@ -382,12 +382,12 @@ export default function AttendanceScreen() {
       const t = time.replace(":00 AM", "A").replace(":00 PM", "P").replace(" AM", "A").replace(" PM", "P");
       return `${base}<br/><span style="font-size:8px">${t}</span>`;
     }
-    const dateCols = dates.map(d => `<th>${fmtSlotHtml(d)}</th>`).join("");
-    const dataRows = rows.map((r, i) => {
+    const dateCols = dates.map((d: any) => `<th>${fmtSlotHtml(d)}</th>`).join("");
+    const dataRows = rows.map((r: any, i: number) => {
       const bg = i % 2 === 0 ? "#fff" : "#F9FAFB";
       const pct = r.percentage;
       const pctColor = pct >= 75 ? "#2E7D32" : pct >= 60 ? "#E65100" : "#C62828";
-      const cells = dates.map(d => {
+      const cells = dates.map((d: any) => {
         const st = r.records[d] ?? "";
         const bg2 = st === "P" ? "#E8F5E9" : st === "A" ? "#FFEBEE" : st === "L" ? "#FFF3E0" : "#fff";
         const col = st === "P" ? "#2E7D32" : st === "A" ? "#C62828" : st === "L" ? "#E65100" : "#ccc";
