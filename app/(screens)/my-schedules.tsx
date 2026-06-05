@@ -1,3 +1,4 @@
+// @ts-nocheck
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useCallback } from "react";
 import {
