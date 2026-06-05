@@ -755,6 +755,6 @@ export interface ExamMarkRow { studentId: number; rollNo: string; name: string; 
 export async function fetchExamWeights(scheduleId: number): Promise<ExamWeights> { return { quiz: 10, assignment: 10, mid: 20, final: 60 }; }
 export async function saveExamWeights(scheduleId: number, weights: ExamWeights): Promise<{success: boolean; error?: string}> { return { success: true }; }
 export async function fetchExamMarks(scheduleId: number, className: string): Promise<ExamMarkRow[]> { return []; }
-export async function saveExamMark(scheduleId: number, studentId: number, field: string, value: number): Promise<{success: boolean; error?: string}> { return { success: true }; }
-export async function importExamMarksExcel(uri: string, name: string, mimeType: string): Promise<{success: boolean; error?: string}> { return { success: false, error: "Not implemented" }; }
-export async function fetchStudentExamResult(scheduleId: number, rollNo: string): Promise<any[]> { return []; }
+export async function saveExamMark(scheduleId: number, className: string, rollNo: string, quiz: number|null, assignment: number|null, mid: number|null, final: number|null): Promise<{success: boolean; error?: string}> { return { success: true }; }
+export async function importExamMarksExcel(scheduleId: number, className: string, uri: string, name: string, mimeType: string): Promise<{success: boolean; updated?: number; skipped?: number; error?: string}> { return { success: false, error: "Not implemented" }; }
+export async function fetchStudentExamResult(scheduleId: number, rollNo: string): Promise<{found: boolean; studentName?: string; [key: string]: any}> { return { found: false }; }
