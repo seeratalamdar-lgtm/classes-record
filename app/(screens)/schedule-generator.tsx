@@ -708,9 +708,10 @@ export default function ScheduleGenerator() {
             document.body.removeChild(a);URL.revokeObjectURL(url);
           } else {
             try {
-              const b64 = btoa(unescape(encodeURIComponent(csv)));
-              const dataUri = `data:text/csv;base64,${b64}`;
-              await Sharing.shareAsync(dataUri, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });
+              const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
+              const path = (cacheDirectory ?? "") + "Testing_Schedule.csv";
+              await writeAsStringAsync(path, csv, { encoding: EncodingType.UTF8 });
+              await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });
             } catch(e: any) {
               Alert.alert("Error", e.message);
             }
