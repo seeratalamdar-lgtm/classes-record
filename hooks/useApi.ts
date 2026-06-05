@@ -752,9 +752,9 @@ export async function fetchMeeting(date: string, start: string, end: string, fac
 // Exam stubs
 export interface ExamWeights { quiz: number; assignment: number; mid: number; final: number; }
 export interface ExamMarkRow { studentId: number; rollNo: string; name: string; quiz?: number; assignment?: number; mid?: number; final?: number; }
-export async function fetchExamWeights(scheduleId: number, subject: string, className: string): Promise<ExamWeights> { return { quiz: 10, assignment: 10, mid: 30, final: 50 }; }
-export async function saveExamWeights(scheduleId: number, subject: string, className: string, weights: ExamWeights): Promise<void> {}
-export async function fetchExamMarks(scheduleId: number, subject: string, className: string): Promise<ExamMarkRow[]> { return []; }
-export async function saveExamMark(scheduleId: number, subject: string, className: string, studentId: number, field: string, value: number): Promise<void> {}
-export async function importExamMarksExcel(uri: string, name: string, mimeType: string, scheduleId: number, subject: string, className: string): Promise<{success: boolean; error?: string}> { return { success: false, error: "Not implemented" }; }
+export async function fetchExamWeights(scheduleId: number): Promise<ExamWeights> { return { quiz: 10, assignment: 10, mid: 20, final: 60 }; }
+export async function saveExamWeights(scheduleId: number, weights: ExamWeights): Promise<{success: boolean; error?: string}> { return { success: true }; }
+export async function fetchExamMarks(scheduleId: number, className: string): Promise<ExamMarkRow[]> { return []; }
+export async function saveExamMark(scheduleId: number, studentId: number, field: string, value: number): Promise<{success: boolean; error?: string}> { return { success: true }; }
+export async function importExamMarksExcel(uri: string, name: string, mimeType: string): Promise<{success: boolean; error?: string}> { return { success: false, error: "Not implemented" }; }
 export async function fetchStudentExamResult(scheduleId: number, rollNo: string): Promise<any[]> { return []; }
