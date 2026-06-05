@@ -15,6 +15,8 @@ import { useAuth } from "@/context/AuthContext";
 import {
   fetchSchedule, fetchStudents,
   ExamWeights, ExamMarkRow,
+  fetchExamWeights, saveExamWeights, fetchExamMarks, saveExamMark,
+  importExamMarksExcel, fetchStudentExamResult,
 } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
 
