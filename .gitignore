@@ -51,3 +51,4 @@ server/.env
 node_modules/
 .cache/
 node_modules/
+# Allow tracking patched react-native files
