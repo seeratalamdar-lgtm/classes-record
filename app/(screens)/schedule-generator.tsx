@@ -708,7 +708,7 @@ export default function ScheduleGenerator() {
             document.body.removeChild(a);URL.revokeObjectURL(url);
           } else {
             try {
-              const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system");
+              const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
               const path = (cacheDirectory ?? "") + "Testing_Schedule.csv";
               await writeAsStringAsync(path, csv, { encoding: EncodingType.UTF8 });
               await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });
