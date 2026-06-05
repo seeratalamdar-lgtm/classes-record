@@ -61,7 +61,7 @@
     "@react-native-community/datetimepicker": "8.4.4",
     "better-sqlite3": "^12.9.0",
     "expo-document-picker": "~14.0.8",
-    "expo-file-system": "~19.0.23",
+    "expo-file-system": "~18.0.12",
     "expo-print": "~15.0.8",
     "expo-screen-orientation": "~9.0.9",
     "expo-sharing": "~14.0.8",
