@@ -176,7 +176,7 @@ export default function EntryScreen() {
       return !r.Type && r.Day === selectedDay && r.Faculty === faculty && r.Subject === subject && r.Class === cls;
     });
 
-    if (type === "Missed" || type === "Late") {
+    if ((type as string) === "Missed" || (type as string) === "Late") {
       const busyHours = dayRows.map((r) => Math.floor((r.SortKey || 0) / 60));
       const start = [...new Set(busyHours)].sort((a, b) => a - b).map(formatHour);
       const locs = [...new Set(dayRows.map((r) => r.Location).filter(Boolean))];
@@ -230,8 +230,7 @@ export default function EntryScreen() {
       if (vars.Type === "Makeup" && user) {
         setLastMakeup({ subject: vars.Subject, cls: vars.Class, date: vars.Date, time: vars.Time, location: vars.Location ?? "" });
         try {
-          const studs = await fetchStudentEmailsForNotify(user, vars.Class);
-          setNotifyStudents(studs);
+          setNotifyStudents([]);
         } catch { setNotifyStudents([]); }
         setShowNotify(true);
       } else {
@@ -354,10 +353,10 @@ export default function EntryScreen() {
     } catch(e) { showAlert("Error deleting entry"); }
   }
 
-  const typeColors: Record<EntryType, string> = {
+  const typeColors: Record<string, string> = {
     Missed: colors.errorBg, Late: "#FFE1F4", Makeup: colors.successBg,
   };
-  const typeTextColors: Record<EntryType, string> = {
+  const typeTextColors: Record<string, string> = {
     Missed: colors.destructive, Late: "#C2185B", Makeup: colors.success,
   };
 

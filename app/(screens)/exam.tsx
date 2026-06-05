@@ -14,8 +14,6 @@ import { useColors } from "@/hooks/useColors";
 import { useAuth } from "@/context/AuthContext";
 import {
   fetchSchedule, fetchStudents,
-  fetchExamWeights, saveExamWeights, fetchExamMarks, saveExamMark,
-  importExamMarksExcel, fetchStudentExamResult,
   ExamWeights, ExamMarkRow,
 } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
