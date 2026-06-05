@@ -65,7 +65,7 @@ function generateSemesterDates(
   const results: SemDate[] = [];
 
   const regular = rows
-    .filter(r => !r.Type && r.Class === className && r.Subject === subject)
+    .filter((r: any) => !r.Type && r.Class === className && r.Subject === subject)
     .sort((a, b) => a.SortKey - b.SortKey);
 
   // Lab sessions span multiple consecutive hours (rows) per day — collapse to ONE session per day.
@@ -990,7 +990,7 @@ export default function AttendanceScreen() {
               <View style={s.rosterLeftHead}>
                 <Text style={s.rosterLeftHeadTxt}>Reg No / Name</Text>
               </View>
-              {roster.rows.map(r => (
+              {roster.rows.map((r: any) => (
                 <View key={r.rollNo} style={s.rosterLeftRow}>
                   <Text style={s.rosterRoll} numberOfLines={1}>{r.rollNo}</Text>
                   <Text style={s.rosterName} numberOfLines={1}>{r.name}</Text>

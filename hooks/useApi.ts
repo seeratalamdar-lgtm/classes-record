@@ -320,12 +320,17 @@ export interface Student {
 
 export interface StudentAttendanceSummary {
   rollNo: string;
+  regNo?: string;
   name: string;
+  studentName?: string;
   email: string;
   total: number;
   present: number;
   absent: number;
   late: number;
+  found?: boolean;
+  rows?: any[];
+  [key: string]: any;
 }
 
 export async function fetchAllStudents(scheduleId: number): Promise<{id:number;className:string;rollNo:string;name:string;email:string;enrolledAt:string;subject:string;faculty:string}[]> {
