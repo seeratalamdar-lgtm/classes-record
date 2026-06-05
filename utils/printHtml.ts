@@ -17,7 +17,11 @@ export async function printOrShareHtml(html: string, shareDialogTitle: string): 
       win.print();
     }, 500);
   } else {
-    const { uri } = await Print.printToFileAsync({ html, base64: false });
-    await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: shareDialogTitle, UTI: "com.adobe.pdf" });
+    try {
+      const { uri } = await Print.printToFileAsync({ html, base64: false });
+      await Sharing.shareAsync(uri, { mimeType: "application/pdf", dialogTitle: shareDialogTitle, UTI: "com.adobe.pdf" });
+    } catch (e: any) {
+      throw new Error("PDF error: " + e.message + " | " + JSON.stringify(e));
+    }
   }
 }
