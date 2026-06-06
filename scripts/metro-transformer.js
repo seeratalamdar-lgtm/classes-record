@@ -7,7 +7,7 @@ module.exports.transform = async function(params) {
         ...params,
         src: params.src
           .replace(/\bthis\.#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, 'this._$1')
-          .replace(/([ \t])#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, '$1_$2'),
+          .replace(/([{;,\n\r])(\s*)#([a-zA-Z_][a-zA-Z0-9_]*)\b/g, '$1$2_$3'),
       };
     }
   }

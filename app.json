@@ -31,7 +31,7 @@
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.INTERNET"
       ],
-      "jsEngine": "jsc"
+      "jsEngine": "hermes"
     },
     "web": {
       "favicon": "./assets/images/icon.png"
