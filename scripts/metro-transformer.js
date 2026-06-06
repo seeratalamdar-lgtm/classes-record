@@ -8,10 +8,13 @@ module.exports.transform = async function(params) {
         filename: params.filename,
         configFile: false,
         babelrc: false,
-        presets: [],
+        assumptions: {
+          privateFieldsAsProperties: true,
+          setPublicClassFields: true,
+        },
         plugins: [
-          ['@babel/plugin-transform-class-properties', { loose: true }],
-          ['@babel/plugin-transform-private-methods', { loose: true }],
+          '@babel/plugin-transform-class-properties',
+          '@babel/plugin-transform-private-methods',
         ],
         compact: false,
         sourceMaps: false,
