@@ -3,16 +3,11 @@ module.exports = function(api) {
   return {
     presets: ['babel-preset-expo'],
     plugins: [
-      ['module-resolver', { alias: { 'react-native-keyboard-controller': 'react-native' } }],
-    ],
-    overrides: [
-      {
-        test: /node_modules/,
-        plugins: [
-          ['@babel/plugin-transform-class-properties', { loose: true }],
-          ['@babel/plugin-transform-private-methods', { loose: true }],
-        ],
-      },
-    ],
+      ['module-resolver', {
+        alias: {
+          'react-native-keyboard-controller': 'react-native'
+        }
+      }]
+    ]
   };
 };
