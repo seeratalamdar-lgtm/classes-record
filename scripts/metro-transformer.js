@@ -62,8 +62,9 @@ function renamePrivateFields(src, filename) {
 }
 
 module.exports.transform = async function(params) {
-  if (params.filename && params.filename.includes('node_modules') &&
-      params.src && params.src.includes('#')) {
+  const fn = params.filename || '';
+  const isTS = fn.endsWith('.ts') || fn.endsWith('.tsx');
+  if (!isTS && fn.includes('node_modules') && params.src && params.src.includes('#')) {
     try {
       const transformed = renamePrivateFields(params.src, params.filename);
       if (transformed) params = { ...params, src: transformed };
