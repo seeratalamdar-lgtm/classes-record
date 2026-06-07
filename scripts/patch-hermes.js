@@ -1,0 +1,23 @@
+const fs = require('fs');
+const path = require('path');
+const file = path.join(__dirname, '../node_modules/react-native/src/private/webapis/geometry/DOMRectReadOnly.js');
+if (!fs.existsSync(file)) {
+  console.log('DOMRectReadOnly.js not found, skipping patch');
+  process.exit(0);
+}
+let content = fs.readFileSync(file, 'utf8');
+if (!content.includes('#x')) {
+  console.log('Already patched, skipping');
+  process.exit(0);
+}
+content = content
+  .replace(/this\.#x/g, 'this._x')
+  .replace(/this\.#y/g, 'this._y')
+  .replace(/this\.#width/g, 'this._width')
+  .replace(/this\.#height/g, 'this._height')
+  .replace(/#x\b/g, '_x')
+  .replace(/#y\b/g, '_y')
+  .replace(/#width\b/g, '_width')
+  .replace(/#height\b/g, '_height');
+fs.writeFileSync(file, content, 'utf8');
+console.log('SUCCESS: Patched DOMRectReadOnly.js');

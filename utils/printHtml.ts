@@ -17,7 +17,7 @@ export async function printOrShareHtml(html: string, shareDialogTitle: string): 
     }, 500);
   } else {
     try {
-      const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system");
+      const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
       const path = (cacheDirectory ?? "") + "report.html";
       await writeAsStringAsync(path, html, { encoding: EncodingType.UTF8 });
       await Sharing.shareAsync(path, { mimeType: "text/html", dialogTitle: shareDialogTitle });
