@@ -1,8 +1,10 @@
 const fs = require('fs');
-const f = require('path').join(__dirname, '../node_modules/react-native-worklets/android/build.gradle');
-if (fs.existsSync(f)) {
-  let c = fs.readFileSync(f, 'utf8');
-  c = c.replace(/version = System\.getenv\("CMAKE_VERSION"\) \?: "3\.22\.1"/g, '// cmake version removed');
-  fs.writeFileSync(f, c);
-  console.log('Patched react-native-worklets cmake version requirement');
+const path = require('path');
+const src = path.join(__dirname, '../patches/worklets-build.gradle');
+const dst = path.join(__dirname, '../node_modules/react-native-worklets/android/build.gradle');
+if (fs.existsSync(dst) && fs.existsSync(src)) {
+  fs.copyFileSync(src, dst);
+  console.log('Patched react-native-worklets build.gradle');
+} else {
+  console.log('Source or dest not found:', src, dst);
 }
