@@ -10,7 +10,8 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online"
+        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online",
+        "CMAKE_VERSION": "3.18.1"
       }
     },
     "production": {
@@ -18,7 +19,8 @@
         "buildType": "app-bundle"
       },
       "env": {
-        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online"
+        "EXPO_PUBLIC_DOMAIN": "schoolcollege.online",
+        "CMAKE_VERSION": "3.18.1"
       }
     },
     "debug": {
