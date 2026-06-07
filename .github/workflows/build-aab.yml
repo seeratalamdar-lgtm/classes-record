@@ -24,6 +24,6 @@ jobs:
       - name: Build AAB
         run: eas build --platform android --profile production --non-interactive
         env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN_RAZA }}
           EXPO_PUBLIC_DOMAIN: schoolcollege.online
           NPM_CONFIG_IGNORE_SCRIPTS: "false"
