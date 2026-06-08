@@ -31,7 +31,10 @@
         "android.permission.READ_MEDIA_AUDIO",
         "android.permission.INTERNET"
       ],
-      "jsEngine": "hermes"
+      "jsEngine": "hermes",
+      "extraBuildProperties": {
+        "android.externalNativeBuild.cmake.path": "/home/expo/android-sdk/cmake/3.22.1/bin/cmake"
+      }
     },
     "web": {
       "favicon": "./assets/images/icon.png"
