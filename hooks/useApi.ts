@@ -491,11 +491,11 @@ export async function fetchFinancePersons(scheduleId: number, personType: string
   return Array.isArray(data) ? data : [];
 }
 
-export async function addFinancePerson(scheduleId: number, personType: string, name: string, email: string, activeFrom: string, designation?: string, salary?: string) {
+export async function addFinancePerson(scheduleId: number, personType: string, name: string, email: string, activeFrom: string, designation?: string, salary?: string, whatsapp?: string) {
   const res = await fetch(`${API_BASE}/finance/persons`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scheduleId, personType, name, email, activeFrom, designation, salary }),
+    body: JSON.stringify({ scheduleId, personType, name, email, activeFrom, designation, salary, whatsapp }),
   });
   return res.json();
 }
@@ -525,24 +525,26 @@ export async function saveFinancePaymentsBulk(payments: FinancePayment[]) {
 }
 
 export async function fetchFinanceSummary(username: string, period: string) {
-  const res = await fetch(`${API_BASE}/finance/summary?period=${encodeURIComponent(period)}`);
+  const res = await fetch(`${API_BASE}/finance/summary?period=${encodeURIComponent(period)}&username=${encodeURIComponent(username || "")}`);
   const raw = await res.json();
   // Transform {student:{Paid:{count,total}}} → {overall:{...}, byType:{...}}
   let totalDue = 0, totalPaid = 0, paid = 0, partial = 0, unpaid = 0;
   const byType: Record<string, any> = {};
   for (const [type, statuses] of Object.entries(raw as Record<string, any>)) {
+    if (type === "pl") continue;
     let typeDue = 0, typePaid = 0, typePaidCount = 0, typePartialCount = 0, typeUnpaidCount = 0;
     for (const [status, data] of Object.entries(statuses as Record<string, any>)) {
-      const d = data as {count: number, total: number};
+      const d = data as {count: number, total: number, paid?: number};
       typeDue += d.total || 0;
-      if (status === "Paid") { typePaid += d.total || 0; typePaidCount += d.count || 0; paid += d.count || 0; }
-      else if (status === "Partial") { typePaid += d.total || 0; typePartialCount += d.count || 0; partial += d.count || 0; }
+      typePaid += (d as any).paid || 0;
+      if (status === "Paid") { typePaidCount += d.count || 0; paid += d.count || 0; }
+      else if (status === "Partial") { typePartialCount += d.count || 0; partial += d.count || 0; }
       else { typeUnpaidCount += d.count || 0; unpaid += d.count || 0; }
     }
     totalDue += typeDue; totalPaid += typePaid;
     byType[type] = { totalDue: typeDue, totalPaid: typePaid, paid: typePaidCount, partial: typePartialCount, unpaid: typeUnpaidCount };
   }
-  return { overall: { totalDue, totalPaid, paid, partial, unpaid }, byType };
+  return { overall: { totalDue, totalPaid, paid, partial, unpaid }, byType, pl: (raw as any).pl ?? { income: 0, facultySalary: 0, staffSalary: 0, expenses: 0, profit: 0 } };
 }
 
 export async function fetchStudentFeeStatus(regNo: string) {
@@ -556,11 +558,11 @@ export async function fetchFinanceRates(scheduleId: number, personType: string) 
   return Array.isArray(data) ? data : [];
 }
 
-export async function saveFinanceRatesBulk(scheduleId: number, personType: string, rates: any[]) {
+export async function saveFinanceRatesBulk(scheduleId: number, personType: string, rates: any[], period?: string) {
   const res = await fetch(`${API_BASE}/finance/rates`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ scheduleId, personType, rates }),
+    body: JSON.stringify({ scheduleId, personType, rates, period }),
   });
   return res.json();
 }

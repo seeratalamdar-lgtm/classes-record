@@ -201,7 +201,7 @@ export default function StudentCredentialsScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.navBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={s.navBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.navBtnTxt}>Back</Text>
           </TouchableOpacity>

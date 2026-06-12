@@ -1,4 +1,5 @@
 // @ts-nocheck
+import DateField from "@/components/DateField";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useCallback, useRef } from "react";
 import {
@@ -618,7 +619,7 @@ export default function AttendanceScreen() {
           <View style={s.manualRow}>
             <Feather name="calendar" size={16} color={colors.primary} />
             {Platform.OS === "web" ? (
-              <TextInput style={s.manualInput} value={manualDate} onChangeText={setManualDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+              <DateField value={manualDate} onChange={setManualDate} />
             ) : (
               <>
                 <TouchableOpacity onPress={() => setShowManualDatePicker(true)} style={[s.manualInput, {justifyContent:"center"}]}>
@@ -798,7 +799,7 @@ export default function AttendanceScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.navBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={s.navBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.navBtnTxt}>Back</Text>
           </TouchableOpacity>

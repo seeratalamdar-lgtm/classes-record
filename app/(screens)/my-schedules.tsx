@@ -84,6 +84,7 @@ export default function MySchedulesScreen() {
   const [activeDays, setActiveDays] = useState<string[]>(["Mon","Tue","Wed","Thu","Fri"]);
   const [pickerTarget, setPickerTarget] = useState<"start" | "end" | null>(null);
   const [breakStart, setBreakStart] = useState<number>(13);
+  const [lectureDuration, setLectureDuration] = useState<number>(60);
   const [breakEnd, setBreakEnd] = useState<number>(14);
 
   const [deleteTarget, setDeleteTarget] = useState<UserSchedule | null>(null);
@@ -109,12 +110,14 @@ export default function MySchedulesScreen() {
         // Navigate to AI Generator immediately after schedule created
         const newId = data?.id ?? data?.schedule?.id ?? data?.scheduleId;
         if (newId) {
+          fetch("https://" + (process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online") + "/api/schedules/" + newId + "/duration", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lectureDuration }) }).catch(() => {});
           router.push(
             `/(screens)/schedule-generator?scheduleId=${newId}` +
             `&scheduleTitle=${encodeURIComponent(newName)}` +
             `&activeDays=${encodeURIComponent(activeDays.join(','))}` +
             `&startHour=${startHour}&endHour=${endHour}` +
-            `&breakStart=${breakStart}&breakEnd=${breakEnd}`
+            `&breakStart=${breakStart}&breakEnd=${breakEnd}` +
+            `&lectureDuration=${lectureDuration}&breakTime=${breakStart}-${breakEnd}`
           );
         }
 },
@@ -498,7 +501,7 @@ export default function MySchedulesScreen() {
                 <View key={sch.id} style={[s.card, sch.isPublic && { borderColor: "#1976D2", borderWidth: 1.5 }]}>
                   <TouchableOpacity
                     style={{ flex: 1, flexDirection: "row", alignItems: "center" }}
-                    onPress={() => router.push(`/(screens)/schedule-dashboard?scheduleId=${sch.id}&scheduleTitle=${encodeURIComponent(sch.name)}&startDate=${sch.startDate ?? ""}&endDate=${sch.endDate ?? ""}&startHour=${sch.startHour ?? 9}&endHour=${sch.endHour ?? 17}&activeDays=${encodeURIComponent(sch.activeDays ?? "Mon,Tue,Wed,Thu,Fri")}&breakTime=${encodeURIComponent(sch.breakTime ?? "13-14")}` as never)}
+                    onPress={() => router.push(`/(screens)/schedule-dashboard?scheduleId=${sch.id}&scheduleTitle=${encodeURIComponent(sch.name)}&startDate=${sch.startDate ?? ""}&endDate=${sch.endDate ?? ""}&startHour=${sch.startHour ?? 9}&endHour=${sch.endHour ?? 17}&activeDays=${encodeURIComponent(sch.activeDays ?? "Mon,Tue,Wed,Thu,Fri")}&breakTime=${encodeURIComponent(sch.breakTime ?? "13-14")}&lectureDuration=${(sch as any).lectureDuration ?? 60}` as never)}
                     activeOpacity={0.75}
                   >
                     <View style={s.cardIcon}>
@@ -788,6 +791,14 @@ export default function MySchedulesScreen() {
             {/* ── Break Time ── */}
             <Text style={s.sheetLabel}>Break Time</Text>
             <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 8 }}>Select break start and end hour (e.g. 1 PM – 2 PM)</Text>
+            <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 4 }}>Lecture Duration</Text>
+            <View style={{flexDirection:"row",gap:8,marginBottom:10,flexWrap:"wrap"}}>
+              {[30,45,60,90].map((mm) => (
+                <TouchableOpacity key={mm} onPress={() => setLectureDuration(mm)} style={{paddingVertical:8,paddingHorizontal:14,borderRadius:18,backgroundColor:lectureDuration===mm?"#1565C0":"#ECEFF1"}}>
+                  <Text style={{fontFamily:"Inter_600SemiBold",fontSize:12.5,color:lectureDuration===mm?"#fff":"#37474F"}}>{mm} min</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
             <Text style={{ fontSize: 11, color: colors.mutedForeground, marginBottom: 4 }}>Break Start</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 10 }}>
               <View style={{ flexDirection: "row", gap: 6 }}>

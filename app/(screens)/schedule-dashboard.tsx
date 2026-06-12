@@ -13,8 +13,8 @@ export default function ScheduleDashboardScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const { scheduleId, scheduleTitle, creatorName, isPublic, startDate, endDate, startHour, endHour, activeDays, breakTime } =
-    useLocalSearchParams<{ scheduleId: string; scheduleTitle: string; creatorName?: string; isPublic?: string; startDate?: string; endDate?: string; startHour?: string; endHour?: string; activeDays?: string; breakTime?: string }>();
+  const { scheduleId, scheduleTitle, creatorName, isPublic, startDate, endDate, startHour, endHour, activeDays, breakTime, lectureDuration } =
+    useLocalSearchParams<{ scheduleId: string; scheduleTitle: string; creatorName?: string; isPublic?: string; startDate?: string; endDate?: string; startHour?: string; endHour?: string; activeDays?: string; breakTime?: string; lectureDuration?: string }>();
 
   const publicMode = isPublic === "1";
 
@@ -27,7 +27,7 @@ export default function ScheduleDashboardScreen() {
   );
 
   const dateParams = startDate ? `&startDate=${startDate}&endDate=${endDate ?? ""}` : "";
-  const timeParams = `&startHour=${startHour ?? "9"}&endHour=${endHour ?? "17"}&activeDays=${encodeURIComponent(activeDays ?? "Mon,Tue,Wed,Thu,Fri")}&breakTime=${encodeURIComponent(breakTime ?? "13-14")}`;
+  const timeParams = `&startHour=${startHour ?? "9"}&endHour=${endHour ?? "17"}&activeDays=${encodeURIComponent(activeDays ?? "Mon,Tue,Wed,Thu,Fri")}&breakTime=${encodeURIComponent(breakTime ?? "13-14")}&lectureDuration=${lectureDuration ?? "60"}`;
   const q = `scheduleId=${scheduleId}&scheduleTitle=${encodeURIComponent(scheduleTitle ?? "")}${publicMode ? "&isPublic=1" : ""}${dateParams}${timeParams}`;
 
   const ALL_TILES = [
@@ -157,7 +157,7 @@ export default function ScheduleDashboardScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={s.backBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.backBtnTxt}>"Back"</Text>
           </TouchableOpacity>

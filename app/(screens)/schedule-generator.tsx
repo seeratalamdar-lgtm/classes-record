@@ -1,766 +1,629 @@
-import { MaterialCommunityIcons } from "@expo/vector-icons";
-import React, { useState } from "react";
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, StyleSheet, Alert, Platform } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import React, { useMemo, useState } from "react";
+import {
+  View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Platform, StyleSheet,
+} from "react-native";
+import { router, useLocalSearchParams } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
-// expo-file-system removed - using fetch API for web compatibility
 
-const colors = { primary:"#1565C0", success:"#2E7D32", bg:"#F5F7FA", card:"#fff", text:"#1a1a2e", muted:"#6B7280", purple:"#6A1B9A" };
+/* ============================================================================
+ AI SCHEDULE GENERATOR — v3
+ CSV columns (12):
+  1 Subject Code | 2 Subjects | 3 Department | 4 Instructor Name with Sections
+  5 Regular/Elective | 6 Class | 7 Credit Hrs (Lec+Lab)
+  8 Location CR        — comma list mapped IN ORDER to sections, e.g. "1,2" -> A:CR-1 B:CR-2
+  9 Location Lab       — shared lab venue (room-clash tracked)
+ 10 Day Availability   — faculty days, empty = all active days  (LECTURES ONLY)
+ 11 Time Availibility  — "9-13" 24h window, empty = full day    (LECTURES ONLY)
+ 12 Combined Location  — big venue; all sections of the row attend ONE shared
+                         lecture session there (lectures only, labs never combine)
 
-function parseTime(t: string): number {
-  if (!t) return 0;
-  const m = t.match(/(\d+):(\d+)\s*(AM|PM)/i);
-  if (!m) return 0;
-  let h = parseInt(m[1]); const min = parseInt(m[2]); const ap = m[3].toUpperCase();
-  if (ap === "PM" && h !== 12) h += 12;
-  if (ap === "AM" && h === 12) h = 0;
-  return h * 60 + min;
-}
+ RULES
+  H1  Section clash    — a section attends one thing at a time
+  H2  Faculty clash    — lectures only; labs are run by TAs (LAB_USES_FACULTY=false)
+  H3  Room clash       — CRs, lab rooms and combined venues tracked per slot
+  H4  Faculty Day/Time availability — applies to LECTURES ONLY (TA conducts labs)
+  H5  Lab = 3 consecutive hours, never spans the break
+  S1  Same subject max once/day/section (falls back to a consecutive double
+      lecture when availability days < lecture count — warned)
+  S2  Max one lab per section per day (warned if relaxed)
+  S3  Lab placed right after break, else right before, else first fit
+  S4  Faculty hours consecutive, capped at 3 in a row
+  S5  Faculty min days on campus: lecture hrs <=2 -> 2 days, ==3 -> 3, >=4 -> 4
+  S6  Low-credit sections start 1 hour late every day
+      (section weekly hrs <= max section weekly hrs - 3)
+  S7  Electives of the same class share identical slots across sections
+  ORDER: constrained lectures -> combined -> labs -> free lectures
+        (labs are availability-exempt so they are flexible; tiny faculty
+         windows must be filled first or labs eat them)
+============================================================================ */
 
-function fmt12(h: number): string {
-  const ap = h >= 12 ? "PM" : "AM"; const h12 = h % 12 || 12;
-  return `${h12}:00 ${ap}`;
-}
+const LAB_USES_FACULTY = false; // TAs conduct labs: labs don't block or restrict faculty
 
-function generateSchedule(rows: any[], activeDays: string[], startHour: number, endHour: number, breakStart: number, breakEnd: number) {
-  const entries: any[] = [];
-  const dayOrder = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-  const days = activeDays.filter(d => dayOrder.includes(d)).sort((a,b)=>dayOrder.indexOf(a)-dayOrder.indexOf(b));
+const DAY_NAMES = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
-  // Parse credit hrs: "3+1" -> { lec:3, lab:1 }
-  function parseCred(c: string) {
-    const p = String(c||"2+0").split("+");
-    return { lec: parseInt(p[0])||2, lab: parseInt(p[1])||0 };
+type Row = {
+  i: number; code: string; subject: string; dept: string; faculty: string;
+  type: string; klass: string; lec: number; lab: number;
+  sections: string[]; crMap: Record<string, string>;
+  labLoc: string; days: string[] | null; time: { s: number; e: number } | null;
+  combined: string | null;
+};
+type Entry = {
+  faculty: string; subject: string; class: string; day: string;
+  time: string; endTime: string; location: string; lecLab: "Lec" | "Lab";
+  dept: string; elective: string;
+};
+
+/* ----------------------------- CSV parsing ------------------------------ */
+
+function parseCSV(text: string): string[][] {
+  const rows: string[][] = [];
+  let cur = "", row: string[] = [], q = false;
+  for (let i = 0; i < text.length; i++) {
+    const c = text[i];
+    if (q) {
+      if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
+      else cur += c;
+    } else if (c === '"') q = true;
+    else if (c === ",") { row.push(cur); cur = ""; }
+    else if (c === "\n" || c === "\r") {
+      if (c === "\r" && text[i + 1] === "\n") i++;
+      row.push(cur); cur = "";
+      if (row.some((x) => x.trim() !== "")) rows.push(row);
+      row = [];
+    } else cur += c;
   }
+  row.push(cur);
+  if (row.some((x) => x.trim() !== "")) rows.push(row);
+  return rows;
+}
 
-  // ============================================================
-  // PRE-PROCESS: Expand rows based on Class + Instructor sections
-  // Draft CSV: Column F = Class (e.g. BEE-6), Column D = Instructor Name with Sections (e.g. Mr. Talha (ABCD))
-  // Each letter in the bracket = one section: BEE-6A, BEE-6B, BEE-6C, BEE-6D
-  // Multiple instructors can share sections: Mr. X (AB) + Mr. Y (CD) for same class
-  // ============================================================
-  const expandedRows: any[] = [];
-  for (const r of rows) {
-    const baseClass = String(r["Class"]||r["Sections"]||r["class"]||"").trim();
-    const instrRaw  = String(r["Instructor Name with Sections"]||r["Instructor Name"]||r["Faculty"]||r["faculty"]||"").trim();
-    if (!baseClass) continue;
+function normHeader(h: string) {
+  return h.toLowerCase().replace(/[^a-z]/g, "");
+}
 
-    // Extract section letters from brackets: "Mr. Talha (ABCD)" -> ["A","B","C","D"]
-    // Instructor name is everything before the last "("
-    const bracketMatch = instrRaw.match(/\(\s*([A-Za-z]+)\s*\)\s*$/);
-    if (bracketMatch) {
-      const letters = bracketMatch[1].trim().split(""); // ["A","B","C","D"]
-      const instrName = instrRaw.slice(0, instrRaw.lastIndexOf("(")).trim(); // "Mr. Talha"
-      for (const letter of letters) {
-        expandedRows.push({
-          ...r,
-          "Class": baseClass + letter,          // BEE-6A, BEE-6B, etc.
-          "Faculty": instrName,                  // clean instructor name
-          "Instructor Name": instrName,
-          "_sectionLetter": letter,
-          "_baseClass": baseClass,
+const TIME_RE = /^(\d{1,2})\s*[-–]\s*(\d{1,2})$/;
+
+function parseRows(text: string): { rows: Row[]; warnings: string[] } {
+  const raw = parseCSV(text);
+  const warnings: string[] = [];
+  if (raw.length < 2) return { rows: [], warnings: ["CSV has no data rows."] };
+  const head = raw[0].map(normHeader);
+  const col = (...names: string[]) => head.findIndex((h) => names.some((n) => h.includes(n)));
+  const C = {
+    code: col("subjectcode"), subject: col("subjects", "subjectname"),
+    dept: col("department"), inst: col("instructor"),
+    type: col("regular", "elective"), klass: col("class"),
+    credit: col("credithrs", "credit"), cr: col("locationcr"),
+    lab: col("locationlab"), days: col("dayavail"),
+    time: col("timeavail"), comb: col("combined"),
+  };
+  if (C.code < 0 || C.inst < 0 || C.credit < 0 || C.klass < 0) {
+    return { rows: [], warnings: ["Header row not recognised — download the new draft template."] };
+  }
+  if (C.comb < 0) warnings.push("No 'Combined Location' column found — combining disabled.");
+
+  const rows: Row[] = [];
+  raw.slice(1).forEach((r, idx) => {
+    const g = (c: number) => (c >= 0 && c < r.length ? (r[c] || "").trim() : "");
+    const n = idx + 2; // human row number
+    const instRaw = g(C.inst);
+    const m = instRaw.match(/^(.*?)\(([^)]+)\)\s*$/);
+    const faculty = (m ? m[1] : instRaw).trim();
+    const sections = m ? m[2].replace(/[^A-Za-z]/g, "").toUpperCase().split("") : ["A"];
+    if (!m) warnings.push(`Row ${n}: no (sections) in instructor name — assumed single section A.`);
+
+    const cm = g(C.credit).match(/(\d+)\s*\+\s*(\d+)/);
+    if (!cm) { warnings.push(`Row ${n}: Credit Hrs "${g(C.credit)}" not in Lec+Lab form — row skipped.`); return; }
+    const lec = parseInt(cm[1], 10), lab = parseInt(cm[2], 10);
+
+    const combined = (g(C.comb) || "").trim() || null;
+
+    // Day availability
+    let days: string[] | null = null;
+    if (g(C.days)) {
+      days = g(C.days).split(",").map((d) => d.trim().slice(0, 3))
+        .map((d) => d.charAt(0).toUpperCase() + d.slice(1).toLowerCase())
+        .filter((d) => {
+          const ok = DAY_NAMES.includes(d);
+          if (!ok) warnings.push(`Row ${n}: unknown day "${d}" ignored.`);
+          return ok;
         });
-      }
-    } else {
-      // No bracket info — treat as-is (e.g. already "BEE-6A" or no section info)
-      expandedRows.push({
-        ...r,
-        "Faculty": instrRaw,
-        "Instructor Name": instrRaw,
-      });
-    }
-  }
-
-  // Group by expanded section (Class column)
-  const sections: Record<string, any[]> = {};
-  for (const r of expandedRows) {
-    const sec = String(r["Class"]||r["Sections"]||r["class"]||"").trim();
-    if (!sec) continue;
-    if (!sections[sec]) sections[sec] = [];
-    sections[sec].push(r);
-  }
-
-  // Location: CR-1 to CR-N per section index
-  const sectionKeys = Object.keys(sections);
-  const sectionLocation: Record<string,string> = {};
-  sectionKeys.forEach((s,i) => { sectionLocation[s] = `CR-${i+1}`; });
-
-  // Faculty busy tracker: { faculty -> { day -> [{ start,end }] } }
-  // Section busy tracker: { section -> { day -> [{ start,end }] } }
-  const facBusy: Record<string, Record<string, {start:number,end:number}[]>> = {};
-
-  const secBusy: Record<string, Record<string, {start:number,end:number}[]>> = {};
-  const locBusy: Record<string, Record<string, {start:number,end:number}[]>> = {};
-  function isLocFree(loc:string,day:string,s:number,e:number){if(!loc)return true;const lb=locBusy[loc]?.[day]||[];const cb=classroomBusy[loc]?.[day]||[];const all=[...lb,...cb];if(all.length===0)return true;return all.every(b=>e<=b.start||s>=b.end);}
-  function bookLoc(loc:string,day:string,s:number,e:number){if(!loc)return;locBusy[loc]=locBusy[loc]||{};locBusy[loc][day]=locBusy[loc][day]||[];locBusy[loc][day].push({start:s,end:e});}
-
-  function isFacFree(fac: string, day: string, start: number, end: number) {
-    if (!facBusy[fac] || !facBusy[fac][day]) return true;
-    return facBusy[fac][day].every(b => end <= b.start || start >= b.end);
-  }
-
-  function isSecFree(sec: string, day: string, start: number, end: number) {
-    if (!secBusy[sec] || !secBusy[sec][day]) return true;
-    return secBusy[sec][day].every(b => end <= b.start || start >= b.end);
-  }
-
-  function bookFac(fac: string, day: string, start: number, end: number) {
-    if (!facBusy[fac]) facBusy[fac] = {};
-    if (!facBusy[fac][day]) facBusy[fac][day] = [];
-    facBusy[fac][day].push({ start, end });
-    facLastSlot[fac]=facLastSlot[fac]||{};
-    if(!facLastSlot[fac][day]||end>facLastSlot[fac][day]) facLastSlot[fac][day]=end;
-  }
-
-  function bookSec(sec: string, day: string, start: number, end: number) {
-    if (!secBusy[sec]) secBusy[sec] = {};
-    if (!secBusy[sec][day]) secBusy[sec][day] = [];
-    secBusy[sec][day].push({ start, end });
-    // Track last end time for consecutive scheduling
-    if (!secLastSlot[sec]) secLastSlot[sec] = {};
-    if (!secLastSlot[sec][day] || end > secLastSlot[sec][day]) {
-      secLastSlot[sec][day] = end;
-    }
-    // Track day hours for load balancing
-    addSecDayHours(sec, day, (end - start) / 60);
-  }
-
-  // Track last booked end time per section per day for consecutive scheduling
-  const secLastSlot: Record<string, Record<string, number>> = {};
-  const facLastSlot: Record<string, Record<string, number>> = {};
-
-  function isBreak(start: number, end: number) {
-    return start < breakEnd && end > breakStart;
-  }
-
-  // Classroom sharing: pair sections, each pair shares ONE classroom
-  // When Section A is in lab, Section B uses A's classroom and vice versa
-  const numClassrooms = Math.max(1, Math.ceil(sectionKeys.length / 2));
-  const classroomBusy: Record<string, Record<string, {start:number,end:number}[]>> = {};
-  // Assign home classroom per section: pairs share same room
-  const sectionHomeRoom: Record<string, string> = {};
-  sectionKeys.forEach((sec, i) => {
-    sectionHomeRoom[sec] = `CR-${i + 1}`;
-  });
-
-  function isClassroomFree(cr: string, day: string, start: number, end: number) {
-    if (!classroomBusy[cr] || !classroomBusy[cr][day]) return true;
-    return classroomBusy[cr][day].every(b => end <= b.start || start >= b.end);
-  }
-
-  function bookClassroom(cr: string, day: string, start: number, end: number) {
-    if (!classroomBusy[cr]) classroomBusy[cr] = {};
-    if (!classroomBusy[cr][day]) classroomBusy[cr][day] = [];
-    classroomBusy[cr][day].push({ start, end });
-  }
-
-  function findFreeClassroom(sec: string, day: string, start: number, end: number): string {
-    const homeRoom = sectionHomeRoom[sec] || "CR-1";
-    if (isClassroomFree(homeRoom, day, start, end)) return homeRoom;
-    // Home room taken — find any free room from expanded pool
-    const poolSize = sectionKeys.length + 10;
-    for (let i = 1; i <= poolSize; i++) {
-      const cr = `CR-${i}`;
-      if (cr !== homeRoom && isClassroomFree(cr, day, start, end)) return cr;
-    }
-    return homeRoom; // fallback
-  }
-
-  // Track hours booked per section per day for load balancing
-  const secDayHours: Record<string, Record<string, number>> = {};
-
-  function getSecDayHours(sec: string, day: string): number {
-    return secDayHours[sec]?.[day] || 0;
-  }
-
-  function addSecDayHours(sec: string, day: string, hrs: number) {
-    if (!secDayHours[sec]) secDayHours[sec] = {};
-    secDayHours[sec][day] = (secDayHours[sec][day] || 0) + hrs;
-  }
-
-  // SLOT PREFERENCE: closest to break = highest priority
-  // Morning slots ordered: 12PM, 11AM, 10AM, 9AM (prefer near break, avoid 9AM)
-  // Afternoon slots ordered: 2PM, 3PM, 4PM (prefer near break, avoid 4PM)
-  function getPreferredSlots(day: string): number[] {
-    const slots: number[] = [];
-    // Morning: from breakStart-60 down to startHour (closest to break first)
-    for (let h = breakStart - 60; h >= startHour * 60; h -= 60) {
-      if (!isBreak(h, h + 60)) slots.push(h);
-    }
-    // Afternoon: from breakEnd up to endHour-60 (closest to break first)
-    for (let h = breakEnd; h < endHour * 60; h += 60) {
-      if (!isBreak(h, h + 60)) slots.push(h);
-    }
-    return slots;
-  }
-
-  function findSlot(fac: string, day: string, durationMins: number, lateStart: boolean, sec?: string): number {
-    const homeRoom = sec ? sectionHomeRoom[sec] : null;
-
-    // MAX HOURS PER DAY: balance load across days
-    // Allow max ceil(totalWeeklyHrs / activeDays) + 1 hours per day per section
-    if (sec) {
-      const totalHrsInSec = sections[sec]?.reduce((sum: number, r: any) => {
-        const cs = String(r["Credit Hrs"]||r["credits"]||"2+0").trim();
-        const cv = parseCred(cs);
-        return sum + cv.lec + (cv.lab > 0 ? 3 : 0);
-      }, 0) || 8;
-      // Use +2 buffer to prevent blocking low-credit subjects from finding slots
-      const maxPerDay = Math.ceil(totalHrsInSec / days.length) + 2;
-      if (getSecDayHours(sec, day) >= maxPerDay) return -1; // day is full
+      if (!days.length) days = null;
     }
 
-    // Search slots in PREFERENCE ORDER: near break first, boundary slots last
-    const preferred = getPreferredSlots(day);
-
-    // If section already has classes today, must be consecutive (no gaps)
-    const facEnd = facLastSlot[fac]?.[day];
-    const lastEnd = sec && secLastSlot[sec]?.[day];
-
-    // Faculty consecutive: prefer slots adjacent to faculty's existing slots
-    const facPreferred = facEnd ? [isBreak(facEnd,facEnd+durationMins)?breakEnd:facEnd] : [];
-    if (lastEnd) {
-      // Consecutive: start right after last class
-      const t = isBreak(lastEnd, lastEnd + durationMins) ? breakEnd : lastEnd;
-      if (t + durationMins <= endHour * 60 &&
-          isFacFree(fac, day, t, t + durationMins) &&
-          (!sec || isSecFree(sec, day, t, t + durationMins)) &&
-          (!homeRoom || isClassroomFree(homeRoom, day, t, t + durationMins))) {
-        return t;
-      }
-      return -1; // no consecutive slot available
-    }
-
-    // First class of day: use preference order
-    // Try faculty-adjacent slots first (consecutive for faculty), then regular preferred
-    const allSlots = [...facPreferred, ...preferred.filter(s=>!facPreferred.includes(s))];
-    for (const t of allSlots) {
-      if (t + durationMins > endHour * 60) continue;
-      if (isBreak(t, t + durationMins)) continue;
-      if (!isFacFree(fac, day, t, t + durationMins)) continue;
-      if (sec && !isSecFree(sec, day, t, t + durationMins)) continue;
-      if (homeRoom && !isClassroomFree(homeRoom, day, t, t + durationMins)) continue;
-      return t;
-    }
-    return -1;
-  }
-
-  for (const [secIdx, secKey] of sectionKeys.entries()) {
-    const secRows = sections[secKey];
-
-    for (const row of secRows) {
-      const facRaw = String(row["Faculty"]||row["Instructor Name"]||row["instructor"]||"").trim();
-      const fac = facRaw.replace(/\s*\(\s*[A-Za-z]+\s*\)\s*$/, "").trim();
-      const subj = String(row["Subjects"]||row["Subject"]||row["subject"]||"").trim();
-      const dept = String(row["Department"]||row["Deptt"]||row["dept"]||"").trim();
-      const credStr = String(row["Credit Hrs"]||row["credits"]||"2+0").trim();
-      const elective = String(row["Regular/Elective"]||row["elective"]||"").trim();
-      const isElective = elective.toLowerCase().includes("elective");
-      const breakStr = String(row["Break Time"]||"13:00-14:00").trim();
-      const cred = parseCred(credStr);
-      const totalWeeklyHrs = cred.lec + (cred.lab > 0 ? 3 : 0);
-      const lateStart = totalWeeklyHrs <= 2;
-
-      // Full-week rule: 90% of sections must cover all 5 days
-      // Each subject gets row-level offset so subjects cover DIFFERENT days
-      const rowIdx = secRows.indexOf(row);
-      const subjectOffset = isElective ? secIdx % days.length : rowIdx % days.length;
-      const rotatedAllDays = [...days.slice(subjectOffset), ...days.slice(0, subjectOffset)];
-      let finalDays: string[] = [];
-      if (totalWeeklyHrs <= 2) {
-        // Low credit: compact, max 2 days
-        finalDays = rotatedAllDays.slice(0, Math.min(cred.lec, 2));
+    // Time availability — venue names typed here are auto-moved to Combined Location
+    let time: { s: number; e: number } | null = null;
+    let combinedFinal = combined;
+    const tRaw = g(C.time);
+    if (tRaw) {
+      const tm = tRaw.match(TIME_RE);
+      if (tm) {
+        time = { s: parseInt(tm[1], 10), e: parseInt(tm[2], 10) };
+        if (time.e <= time.s) { warnings.push(`Row ${n}: Time Availability "${tRaw}" end <= start — ignored.`); time = null; }
+      } else if (!combinedFinal) {
+        combinedFinal = tRaw; // single venue name, no time range -> it's a Combined Location
+        warnings.push(`Row ${n}: "${tRaw}" found in Time Availability — treated as Combined Location.`);
       } else {
-        // High credit: use ceil step for wider day spread
-        const targetDays = Math.min(cred.lec, days.length);
-        const step = Math.ceil(days.length / targetDays);
-        const seenD = new Set();
-        for (let i = 0; i < days.length && finalDays.length < targetDays; i++) {
-          const d = rotatedAllDays[(i * step) % days.length];
-          if (!seenD.has(d)) { seenD.add(d); finalDays.push(d); }
-        }
-        for (const d of rotatedAllDays) {
-          if (finalDays.length >= cred.lec) break;
-          if (!seenD.has(d)) { seenD.add(d); finalDays.push(d); }
-        }
+        warnings.push(`Row ${n}: Time Availability "${tRaw}" is not a time range like 9-13 — ignored.`);
       }
-      const busyD = finalDays.filter((d: string) => facBusy[fac]?.[d]?.length > 0);
-      const freeD = finalDays.filter((d: string) => !facBusy[fac]?.[d]?.length);
-      const sortedFinalDays = [...busyD, ...freeD];
-      // Schedule lectures
-      let lecScheduled = 0;
-      for (const day of sortedFinalDays) {
-        if (lecScheduled >= cred.lec) break;
-        const slot = findSlot(fac, day, 60, lateStart, secKey);
-        if (slot === -1) continue;
-        const timeStart = fmt12(slot / 60);
-        const timeEnd = fmt12((slot + 60) / 60);
-        const lecRoom = findFreeClassroom(secKey, day, slot, slot + 60);
-        bookClassroom(lecRoom, day, slot, slot + 60);
-        entries.push({
-          Faculty: fac, Subject: subj, Class: secKey, Deptt: dept,
-          Day: day, Time: timeStart, EndTime: timeEnd,
-          Location: lecRoom, LecLab: "Lec",
-          Elective: isElective ? "E" : "",
-          SortKey: dayOrder.indexOf(day) * 100 + slot / 60
-        });
-        bookFac(fac, day, slot, slot + 60);
-        bookSec(secKey, day, slot, slot + 60);
-        lecScheduled++;
-      }
+    }
 
-      // Schedule lab (3 consecutive hrs)
-      if (cred.lab > 0) {
-        let labDone = false;
-        for (const day of days) {
-          if (labDone) break;
-          // Try after break first, then before break
-          for (const startMinOffset of [breakEnd, breakStart - 180, startHour * 60]) {
-            const t = Math.max(startHour * 60, startMinOffset);
-            if (t + 180 > endHour * 60) continue;
-            if (isBreak(t, t + 180)) continue;
-            if (!isFacFree(fac, day, t, t + 180)) continue;
-            if (!isSecFree(secKey, day, t, t + 180)) continue;
-            const labRoom = "Lab " + subj;
-            if (!isLocFree(labRoom, day, t, t + 180)) continue;
-            const timeStart = fmt12(t / 60);
-            const timeEnd3 = fmt12((t + 180) / 60);
-            bookLoc(labRoom, day, t, t + 180);
-            for (let h = 0; h < 3; h++) {
-              entries.push({
-                Faculty: fac, Subject: subj, Class: secKey, Deptt: dept,
-                Day: day, Time: fmt12((t + h * 60) / 60), EndTime: fmt12((t + (h+1) * 60) / 60),
-                Location: labRoom, LecLab: "Lab",
-                Elective: isElective ? "E" : "",
-                SortKey: dayOrder.indexOf(day) * 100 + (t + h * 60) / 60
-              });
+    // Location CR -> ordered map onto sections (skipped warnings for combined rows)
+    const crMap: Record<string, string> = {};
+    const crList = g(C.cr) ? g(C.cr).split(",").map((x) => x.trim()).filter(Boolean) : [];
+    if (!combinedFinal && lec > 0) {
+      if (crList.length && crList.length !== sections.length) {
+        warnings.push(`Row ${n}: ${sections.length} sections but ${crList.length} CR numbers — extra sections get no room.`);
+      }
+      if (!crList.length) warnings.push(`Row ${n}: Location CR empty — lecture rooms left blank.`);
+    }
+    sections.forEach((s, k) => {
+      crMap[s] = crList[k] ? (/^cr/i.test(crList[k]) ? crList[k].toUpperCase() : `CR-${crList[k]}`) : "";
+    });
+
+    rows.push({
+      i: n, code: g(C.code), subject: g(C.subject), dept: g(C.dept), faculty,
+      type: g(C.type) || "Regular", klass: g(C.klass), lec, lab, sections, crMap,
+      labLoc: g(C.lab), days, time, combined: combinedFinal,
+    });
+  });
+  return { rows, warnings };
+}
+
+/* --------------------------- The scheduler ------------------------------ */
+
+function generate(
+  rows: Row[], activeDays: string[], startHour: number, endHour: number,
+  brk: { s: number; e: number } | null, slotMin: number,
+): { entries: Entry[]; warnings: string[] } {
+  const W: string[] = [];
+  const entries: Entry[] = [];
+  const startMin = startHour * 60, endMin = endHour * 60;
+  const brkS = brk ? brk.s * 60 : -1, brkE = brk ? brk.e * 60 : -1;
+  const LAB_MIN = 180; // a lab is always 3 clock-hours
+  const labSlots = Math.max(1, Math.ceil(LAB_MIN / slotMin));
+  const labLen = labSlots * slotMin;
+  // Split lattice: morning slots from start time, afternoon slots restart at break end
+  const SLOTS: number[] = [];
+  for (let x = startMin; x + slotMin <= (brk ? brkS : endMin); x += slotMin) SLOTS.push(x);
+  if (brk) for (let x = brkE; x + slotMin <= endMin; x += slotMin) SLOTS.push(x);
+  const contiguousFrom = (i: number, n: number) => {
+    if (i + n > SLOTS.length) return false;
+    for (let k = 0; k < n - 1; k++) if (SLOTS[i + k + 1] !== SLOTS[i + k] + slotMin) return false;
+    return true;
+  };
+  const fmt = (mm: number) => `${Math.floor(mm / 60)}:${String(mm % 60).padStart(2, "0")}`;
+
+  const secKey = (klass: string, s: string) => `${klass}|${s}`;
+  const busySec: Record<string, Record<string, Set<number>>> = {};
+  const busyFac: Record<string, Record<string, Set<number>>> = {};
+  const busyRoom: Record<string, Record<string, Set<number>>> = {};
+  const labCountSecDay: Record<string, Record<string, number>> = {};
+  const subjDaySec: Record<string, Set<string>> = {};
+
+  const bs = (m2: any, k: string, d: string) => ((m2[k] = m2[k] || {}), (m2[k][d] = m2[k][d] || new Set<number>()));
+  const free = (m2: any, k: string, d: string, x: number) => !m2[k]?.[d]?.has(x);
+  const overlapsBreak = (x: number, lenMin: number) => brk !== null && x < brkE && x + lenMin > brkS;
+
+  // S6 - late start for low-credit sections (one slot late)
+  const secTotal: Record<string, number> = {};
+  rows.forEach((r) => r.sections.forEach((s) => {
+    secTotal[secKey(r.klass, s)] = (secTotal[secKey(r.klass, s)] || 0) + r.lec * slotMin + r.lab * LAB_MIN;
+  }));
+  const maxTotal = Math.max(0, ...Object.values(secTotal));
+  const secStart = (k: string) =>
+    (secTotal[k] ?? maxTotal) <= maxTotal - LAB_MIN ? (SLOTS[1] ?? SLOTS[0] ?? startMin) : (SLOTS[0] ?? startMin);
+
+  // S5 - faculty allowed days from LECTURE minutes only (labs are TA-run)
+  const facLecMin: Record<string, number> = {};
+  rows.forEach((r) => { facLecMin[r.faculty] = (facLecMin[r.faculty] || 0) + r.lec * slotMin * (r.combined ? 1 : r.sections.length); });
+  const facDayCap = (f: string) => { const mm = facLecMin[f] || 0; return mm <= 120 ? 2 : mm <= 180 ? 3 : 4; };
+  const facDays: Record<string, string[]> = {};
+
+  const facultyDayAllowed = (f: string, d: string, relax: boolean) => {
+    if (relax) return true;
+    const used = facDays[f] || [];
+    return used.includes(d) || used.length < facDayCap(f);
+  };
+  const noteFacultyDay = (f: string, d: string) => {
+    facDays[f] = facDays[f] || [];
+    if (!facDays[f].includes(d)) facDays[f].push(d);
+  };
+
+  // S4 - consecutive preference, run capped at 180 teaching minutes
+  const maxRunSlots = Math.max(1, Math.round(180 / slotMin));
+  const facRunIfAdded = (f: string, d: string, x: number) => {
+    const set = busyFac[f]?.[d] || new Set<number>();
+    let run = 1, y = x - slotMin;
+    while (set.has(y)) { run++; y -= slotMin; }
+    y = x + slotMin;
+    while (set.has(y)) { run++; y += slotMin; }
+    return run;
+  };
+  const facAdjacent = (f: string, d: string, x: number) => {
+    const set = busyFac[f]?.[d];
+    return !!set && (set.has(x - slotMin) || set.has(x + slotMin));
+  };
+
+  const occupy = (r: Row, secs: string[], d: string, x: number, lenSlots: number, room: string, isLab: boolean) => {
+    for (let y = x; y < x + lenSlots * slotMin; y += slotMin) {
+      secs.forEach((s) => bs(busySec, secKey(r.klass, s), d).add(y));
+      if (!isLab || LAB_USES_FACULTY) bs(busyFac, r.faculty, d).add(y);
+      if (room) bs(busyRoom, room, d).add(y);
+    }
+    if (!isLab || LAB_USES_FACULTY) noteFacultyDay(r.faculty, d);
+    secs.forEach((s) => {
+      const n = isLab ? lenSlots : 1; // labs emit one entry PER SLOT (3 consecutive rows)
+      for (let k = 0; k < n; k++) {
+        const t0 = x + k * slotMin;
+        entries.push({
+          faculty: r.faculty, subject: r.subject, class: `${r.klass} (${s})`, day: d,
+          time: fmt(t0), endTime: fmt(t0 + (n > 1 ? slotMin : lenSlots * slotMin)),
+          location: room, lecLab: isLab ? "Lab" : "Lec",
+          dept: r.dept, elective: /elective/i.test(r.type) ? "Elective" : "",
+        });
+      }
+    });
+  };
+
+  /* ---- LAB placement (TA-run: exempt from faculty availability & clash) ---- */
+  const placeLabs = () => {
+  const labRows = rows.filter((r) => r.lab > 0)
+    .sort((a, b) => (b.labLoc ? 1 : 0) - (a.labLoc ? 1 : 0));
+  for (const r of labRows) {
+    for (const s of r.sections) {
+      const k = secKey(r.klass, s);
+      let placed = false;
+      for (const relaxOneLabPerDay of [false, true]) {
+        const dayOrder = [...activeDays].sort((d1, d2) =>
+          (labCountSecDay[k]?.[d1] || 0) - (labCountSecDay[k]?.[d2] || 0));
+        for (const d of dayOrder) {
+          if (!relaxOneLabPerDay && (labCountSecDay[k]?.[d] || 0) > 0) continue;
+          const lo = secStart(k);
+          const starts: number[] = [];
+          const idxOK = (i: number) => SLOTS[i] >= lo && contiguousFrom(i, labSlots);
+          const iAft = SLOTS.indexOf(brkE);                       // right after break (S3)
+          if (brk && iAft >= 0 && idxOK(iAft)) starts.push(SLOTS[iAft]);
+          if (brk) for (let i = SLOTS.length - 1; i >= 0; i--) {  // latest block ending at/before break
+            if (idxOK(i) && SLOTS[i] + labLen <= brkS) { starts.push(SLOTS[i]); break; }
+          }
+          for (let i = 0; i < SLOTS.length; i++) if (idxOK(i)) starts.push(SLOTS[i]);
+          for (const x of starts) {
+            if (overlapsBreak(x, labLen)) continue;
+            let ok = true;
+            for (let y = x; y < x + labLen; y += slotMin) {
+              if (!free(busySec, k, d, y)) ok = false;
+              if (r.labLoc && !free(busyRoom, r.labLoc, d, y)) ok = false;
+              if (LAB_USES_FACULTY && !free(busyFac, r.faculty, d, y)) ok = false;
             }
-            bookFac(fac, day, t, t + 180);
-            bookSec(secKey, day, t, t + 180);
-            labDone = true;
-            break;
+            if (!ok) continue;
+            occupy(r, [s], d, x, labSlots, r.labLoc, true);
+            labCountSecDay[k] = labCountSecDay[k] || {};
+            labCountSecDay[k][d] = (labCountSecDay[k][d] || 0) + 1;
+            if (relaxOneLabPerDay) W.push(`Row ${r.i}: section ${r.klass}(${s}) got a 2nd lab on ${d} (no free day left).`);
+            placed = true; break;
+          }
+          if (placed) break;
+        }
+        if (placed) break;
+      }
+      if (!placed) W.push(`Row ${r.i}: could NOT place lab for ${r.klass}(${s}) — ${r.labLoc || "lab room"} is fully booked.`);
+    }
+  }
+  };
+
+  /* ---- LECTURES ---- */
+  const electiveSlot: Record<string, { d: string; x: number }[]> = {};
+
+  const placeLectures = (r: Row, secs: string[], shared: boolean) => {
+    const keys = secs.map((s) => secKey(r.klass, s));
+    const loWin = Math.max(...keys.map(secStart), r.time ? r.time.s * 60 : startMin);
+    const hiWin = Math.min(endMin, r.time ? r.time.e * 60 : endMin);
+    const allowedDays = (r.days || activeDays).filter((d) => activeDays.includes(d));
+    if (r.days && !allowedDays.length) { W.push(`Row ${r.i}: none of the availability days are active schedule days.`); return; }
+    if (hiWin - loWin < slotMin) { W.push(`Row ${r.i}: time window ${fmt(loWin)}-${fmt(hiWin)} smaller than one ${slotMin}-min slot.`); return; }
+    if (r.days && r.lec > allowedDays.length) {
+      W.push(`Row ${r.i}: ${r.lec} lectures but only ${allowedDays.length} available day(s) — using consecutive double lectures.`);
+    }
+
+    const latticeLo = Math.max(...keys.map(secStart)); // lattice base for these sections
+    const subjKey = `${keys[0]}|${r.code}`;
+    subjDaySec[subjKey] = subjDaySec[subjKey] || new Set();
+    const room = (s: string) => (shared ? r.combined! : r.crMap[s] || "");
+    const eKey = `${r.klass}|${r.type.toLowerCase()}`;
+    const isElective = /elective/i.test(r.type);
+
+    for (let li = 0; li < r.lec; li++) {
+      let done = false;
+      for (const [sameDay, relaxDays, relaxRun] of
+        [[false, false, false], [true, false, false], [false, true, false], [true, true, true]] as const) {
+        const cands: { d: string; x: number; score: number }[] = [];
+        for (const d of allowedDays) {
+          if (!sameDay && subjDaySec[subjKey].has(d)) continue;
+          if (!facultyDayAllowed(r.faculty, d, relaxDays)) continue;
+          for (const x of SLOTS) {
+            if (x < latticeLo || x < loWin || x + slotMin > hiWin) continue;
+            if (overlapsBreak(x, slotMin)) continue;
+            if (!free(busyFac, r.faculty, d, x)) continue;
+            if (keys.some((k) => !free(busySec, k, d, x))) continue;
+            if (secs.some((s) => room(s) && !free(busyRoom, room(s), d, x))) continue;
+            if (!relaxRun && facRunIfAdded(r.faculty, d, x) > maxRunSlots) continue;
+            let score = 0;
+            if (facAdjacent(r.faculty, d, x)) score += 8;
+            if (sameDay && busySec[keys[0]]?.[d]?.has(x - slotMin)) score += 4;
+            if ((facDays[r.faculty] || []).includes(d)) score += 3;
+            if (isElective && electiveSlot[eKey]?.some((e2) => e2.d === d && e2.x === x)) score += 10;
+            score -= ((x - (SLOTS[0] ?? startMin)) / slotMin) * 0.1;
+            cands.push({ d, x, score });
           }
         }
-      }
-    }
-  }
-
-  const labCount = {};
-  for (const e of entries) { if (e.LecLab !== "Lab") continue; labCount[e.Class] = labCount[e.Class] || {}; labCount[e.Class][e.Subject] = (labCount[e.Class][e.Subject] || 0) + 1; }
-  // ── POST-PROCESSING VERIFICATION ──
-  // Count scheduled lectures per section+subject and force-add any missing ones
-  const scheduledCount: Record<string, Record<string, number>> = {};
-  for (const e of entries) {
-    if (e.LecLab !== "Lec") continue;
-    const k = e.Class + "|||" + e.Subject;
-    scheduledCount[e.Class] = scheduledCount[e.Class] || {};
-    scheduledCount[e.Class][e.Subject] = (scheduledCount[e.Class][e.Subject] || 0) + 1;
-  }
-
-  // For each section+subject, check if lectures are missing
-  for (const [secIdx, secKey] of sectionKeys.entries()) {
-    for (const row of sections[secKey]) {
-      const subj = String(row["Subjects"]||row["Subject"]||row["subject"]||"").trim();
-      const fac = String(row["Faculty"]||row["Instructor Name"]||row["instructor"]||"").trim().replace(/\s*\(\s*[A-Za-z]+\s*\)\s*$/, "").trim();
-      const dept = String(row["Department"]||row["Deptt"]||row["dept"]||"").trim();
-      const credStr = String(row["Credit Hrs"]||row["credits"]||"2+0").trim();
-      const cred = parseCred(credStr);
-      const scheduled = (scheduledCount[secKey]?.[subj]) || 0;
-      const missing = cred.lec - scheduled;
-      const gotLabs = (labCount[secKey]?.[subj]) || 0;
-      const missingLabs = cred.lab - gotLabs;
-      if ((missing <= 0 || cred.lec === 0) && missingLabs <= 0) continue;
-      if (cred.lec === 0 && cred.lab === 0) continue;
-
-      // Force schedule missing lectures — try every day and hour
-      let added = 0;
-      for (const day of days) {
-        if (added >= missing) break;
-        for (let h = startHour; h < endHour; h++) {
-          if (added >= missing) break;
-          const t = h * 60;
-          if (isBreak(t, t + 60)) continue;
-          if (!isFacFree(fac, day, t, t + 60)) continue;
-          if (!isSecFree(secKey, day, t, t + 60)) continue;
-          const lecRoom = sectionHomeRoom[secKey] || "CR-1";
-          entries.push({
-            Faculty: fac, Subject: subj, Class: secKey, Deptt: dept,
-            Day: day, Time: fmt12(t / 60), EndTime: fmt12((t + 60) / 60),
-            Location: lecRoom, LecLab: "Lec", Elective: "",
-            SortKey: dayOrder.indexOf(day) * 100 + h
-          });
-          bookFac(fac, day, t, t + 60);
-          bookSec(secKey, day, t, t + 60);
-          const ppRoom = findFreeClassroom(secKey, day, t, t + 60);
-          bookClassroom(ppRoom, day, t, t + 60);
-          scheduledCount[secKey] = scheduledCount[secKey] || {};
-          scheduledCount[secKey][subj] = (scheduledCount[secKey][subj] || 0) + 1;
-          added++;
+        if (cands.length) {
+          cands.sort((a, b) => b.score - a.score);
+          const { d, x } = cands[0];
+          for (let s2 = 0; s2 < secs.length; s2++) {
+            const s = secs[s2];
+            bs(busySec, secKey(r.klass, s), d).add(x);
+            if (room(s)) bs(busyRoom, room(s), d).add(x);
+            entries.push({
+              faculty: r.faculty, subject: r.subject, class: `${r.klass} (${s})`, day: d,
+              time: fmt(x), endTime: fmt(x + slotMin), location: room(s), lecLab: "Lec",
+              dept: r.dept, elective: isElective ? "Elective" : "",
+            });
+          }
+          bs(busyFac, r.faculty, d).add(x);
+          noteFacultyDay(r.faculty, d);
+          subjDaySec[subjKey].add(d);
+          if (isElective) (electiveSlot[eKey] = electiveSlot[eKey] || []).push({ d, x });
+          done = true; break;
         }
       }
-      if(missingLabs>0){let la=0;for(const day of days){if(la>=missingLabs)break;for(let h=startHour;h<=endHour-3;h++){if(la>=missingLabs)break;const t=h*60;if(t<breakEnd&&t+180>breakStart)continue;if(!isFacFree(fac,day,t,t+180))continue;if(!isSecFree(secKey,day,t,t+180))continue;const ppLabRoom="Lab "+subj;for(let plh=0;plh<3;plh++){entries.push({Faculty:fac,Subject:subj,Class:secKey,Deptt:dept,Day:day,Time:fmt12((t+plh*60)/60),EndTime:fmt12((t+(plh+1)*60)/60),Location:ppLabRoom,LecLab:"Lab",Elective:"",SortKey:dayOrder.indexOf(day)*100+h+plh});}bookFac(fac,day,t,t+180);bookSec(secKey,day,t,t+180);labCount[secKey]=labCount[secKey]||{};labCount[secKey][subj]=(labCount[secKey][subj]||0)+1;la++;}}}
+      if (!done) W.push(`Row ${r.i}: could NOT place lecture ${li + 1}/${r.lec} for ${r.klass}(${secs.join("")}) — ${r.faculty}.`);
     }
-  }
+  };
 
-  // FINAL FORCE
-  {
-    const fc={};
-    for(const sk of sectionKeys){
-      for(const row of sections[sk]){
-        const s2=String(row["Subjects"]||row["Subject"]||"").trim();
-        const f2=String(row["Faculty"]||row["Instructor Name"]||"").trim().replace(/\s*\(\s*[A-Za-z]+\s*\)\s*$/,"").trim();
-        const d2=String(row["Department"]||row["Deptt"]||"").trim();
-        const cv=parseCred(String(row["Credit Hrs"]||row["credits"]||"2+0").trim());
-        fc[sk]=fc[sk]||{};
-        if(!fc[sk][s2]) fc[sk][s2]={lec:cv.lec,lab:cv.lab,f:f2,d:d2};
-      }
-    }
-    const fl={},flab={};
-    for(const e of entries){
-      if(e.LecLab==="Lec"){fl[e.Class]=fl[e.Class]||{};fl[e.Class][e.Subject]=(fl[e.Class][e.Subject]||0)+1;}
-      else{flab[e.Class]=flab[e.Class]||{};flab[e.Class][e.Subject]=(flab[e.Class][e.Subject]||0)+1;}
-    }
-    const free3=(bmap,k,day,t,dur)=>{if(!bmap[k]||!bmap[k][day])return true;return bmap[k][day].every(b=>t+dur<=b.start||t>=b.end);};
-    const book=(bmap,k,day,t,dur)=>{bmap[k]=bmap[k]||{};bmap[k][day]=bmap[k][day]||[];bmap[k][day].push({start:t,end:t+dur});};
-    for(const sk of Object.keys(fc)){
-      for(const s2 of Object.keys(fc[sk])){
-        const {lec,lab,f:f2,d:d2}=fc[sk][s2];
-        let gotL=(fl[sk]||{})[s2]||0;
-        let gotLab=(flab[sk]||{})[s2]||0;
-        for(let di=0;di<days.length*(endHour-startHour)&&gotL<lec;di++){
-          const day=days[di%days.length];
-          const h=startHour+Math.floor(di/days.length);
-          if(h>=endHour)continue;
-          const t=h*60;
-          if(isBreak(t,t+60))continue;
-          if(!free3(facBusy,f2,day,t,60)||!free3(secBusy,sk,day,t,60))continue;
-          entries.push({Faculty:f2,Subject:s2,Class:sk,Deptt:d2,Day:day,Time:fmt12(t/60),EndTime:fmt12((t+60)/60),Location:sectionHomeRoom[sk]||"CR-1",LecLab:"Lec",Elective:"",SortKey:dayOrder.indexOf(day)*100+h});
-          book(facBusy,f2,day,t,60);book(secBusy,sk,day,t,60);
-          fl[sk]=fl[sk]||{};fl[sk][s2]=(fl[sk][s2]||0)+1;gotL++;
-        }
-        for(let di=0;di<days.length*(endHour-startHour)&&gotLab<lab;di++){
-          const day=days[di%days.length];
-          const h=startHour+Math.floor(di/days.length);
-          if(h>endHour-3)continue;
-          const t=h*60;
-          if(t<breakEnd&&t+180>breakStart)continue;
-          if(!free3(facBusy,f2,day,t,180)||!free3(secBusy,sk,day,t,180))continue;
-          const ffLabRoom="Lab "+s2;
-          if(!isLocFree(ffLabRoom,day,t,t+180))continue;for(let flh=0;flh<3;flh++){entries.push({Faculty:f2,Subject:s2,Class:sk,Deptt:d2,Day:day,Time:fmt12((t+flh*60)/60),EndTime:fmt12((t+(flh+1)*60)/60),Location:ffLabRoom,LecLab:"Lab",Elective:"",SortKey:dayOrder.indexOf(day)*100+h+flh});}bookLoc(ffLabRoom,day,t,t+180);
-          book(facBusy,f2,day,t,180);book(secBusy,sk,day,t,180);
-          flab[sk]=flab[sk]||{};flab[sk][s2]=(flab[sk][s2]||0)+1;gotLab++;
-        }
-      }
-    }
-  }
-  // Hardcoded fix for known missing sections
-  {
-    const hfx=[
-      {cls:"BEE-6B",subj:"Microwave Engineering",fac:"Dr. Muhammad Omar Khan",dept:"EE",lec:3,lab:1},
-      {cls:"BE(SE)-8A",subj:"Fundamentals of Computer Programming",fac:"Mr. Jaudat Mamoon",dept:"DoC",lec:0,lab:1},
-      {cls:"BE(SE)-8B",subj:"Fundamentals of Computer Programming",fac:"Mr. Jaudat Mamoon",dept:"DoC",lec:0,lab:1},
-      {cls:"BE(SE)-8A",subj:"Fundamentals of ICT",fac:"Ms. Haleemah Zia",dept:"DoC",lec:0,lab:1},
-      {cls:"BE(SE)-8B",subj:"Fundamentals of ICT",fac:"Ms. Haleemah Zia",dept:"DoC",lec:0,lab:1},
-    ];
-    const hfl={},hflab={};
-    for(const e of entries){
-      if(e.LecLab==="Lec"){hfl[e.Class]=hfl[e.Class]||{};hfl[e.Class][e.Subject]=(hfl[e.Class][e.Subject]||0)+1;}
-      else{hflab[e.Class]=hflab[e.Class]||{};hflab[e.Class][e.Subject]=(hflab[e.Class][e.Subject]||0)+1;}
-    }
-    const hfree=(bmap,k,day,t,dur)=>{if(!bmap[k]||!bmap[k][day])return true;return bmap[k][day].every(b=>t+dur<=b.start||t>=b.end);};
-    const hbook=(bmap,k,day,t,dur)=>{bmap[k]=bmap[k]||{};bmap[k][day]=bmap[k][day]||[];bmap[k][day].push({start:t,end:t+dur});};
-    for(const h of hfx){
-      let gl=(hfl[h.cls]||{})[h.subj]||0;
-      let glab=(hflab[h.cls]||{})[h.subj]||0;
-      for(let di=0;di<days.length*(endHour-startHour)&&gl<h.lec;di++){
-        const day=days[di%days.length];const hr=startHour+Math.floor(di/days.length);
-        if(hr>=endHour)continue;const t=hr*60;
-        if(isBreak(t,t+60))continue;
-        if(!hfree(facBusy,h.fac,day,t,60)||!hfree(secBusy,h.cls,day,t,60))continue;
-        entries.push({Faculty:h.fac,Subject:h.subj,Class:h.cls,Deptt:h.dept,Day:day,Time:fmt12(t/60),EndTime:fmt12((t+60)/60),Location:sectionHomeRoom[h.cls]||"CR-1",LecLab:"Lec",Elective:"",SortKey:dayOrder.indexOf(day)*100+hr});
-        hbook(facBusy,h.fac,day,t,60);hbook(secBusy,h.cls,day,t,60);
-        hfl[h.cls]=hfl[h.cls]||{};hfl[h.cls][h.subj]=(hfl[h.cls][h.subj]||0)+1;gl++;
-      }
-      for(let di=0;di<days.length*(endHour-startHour)&&glab<h.lab;di++){
-        const day=days[di%days.length];const hr=startHour+Math.floor(di/days.length);
-        if(hr>endHour-3)continue;const t=hr*60;
-        if(t<breakEnd&&t+180>breakStart)continue;
-        if(!hfree(facBusy,h.fac,day,t,180)||!hfree(secBusy,h.cls,day,t,180))continue;
-        const hLR="Lab "+h.subj;
-        if(!isLocFree(hLR,day,t,t+180))continue;for(let lh=0;lh<3;lh++){entries.push({Faculty:h.fac,Subject:h.subj,Class:h.cls,Deptt:h.dept,Day:day,Time:fmt12((t+lh*60)/60),EndTime:fmt12((t+(lh+1)*60)/60),Location:hLR,LecLab:"Lab",Elective:"",SortKey:dayOrder.indexOf(day)*100+hr+lh});}
-        hbook(facBusy,h.fac,day,t,180);hbook(secBusy,h.cls,day,t,180);bookLoc(hLR,day,t,t+180);
-        hflab[h.cls]=hflab[h.cls]||{};hflab[h.cls][h.subj]=(hflab[h.cls][h.subj]||0)+1;glab++;
-      }
-    }
-  }
-  return entries;
+  /* ---- PASS ORDER: constrained lectures -> combined -> labs -> free lectures ---- */
+  rows.filter((r) => !r.combined && r.lec > 0 && (r.days || r.time))
+    .sort((a, b) => ((a.days?.length ?? 9) * (a.time ? (a.time.e - a.time.s) : 9)) -
+                    ((b.days?.length ?? 9) * (b.time ? (b.time.e - b.time.s) : 9)))
+    .forEach((r) => r.sections.forEach((s) => placeLectures(r, [s], false)));
+  rows.filter((r) => r.combined && r.lec > 0).forEach((r) => placeLectures(r, r.sections, true));
+  placeLabs();
+  rows.filter((r) => !r.combined && r.lec > 0 && !r.days && !r.time)
+    .forEach((r) => r.sections.forEach((s) => placeLectures(r, [s], false)));
+
+  return { entries, warnings: [...new Set(W)] };
 }
+
+/* ------------------------------- Screen --------------------------------- */
+
+const TEMPLATE =
+  "Subject Code,Subjects,Department,Instructor Name with Sections,Regular/Elective,Class,Credit Hrs,Location CR,Location Lab,Day Availability,Time Availibility,Combined Location\n" +
+  "MATH101,Calculus and Analytical Geometry,BS,Dr. Quanita Kiran (AB),Regular,BEE-9,3+0,\"1,2\",,\"Mon, Tue\",9-13,\n" +
+  "MATH101,Calculus and Analytical Geometry,BS,Dr. Mehwish Rubab (CD),Regular,BEE-9,3+0,\"3,4\",,\"Wed, Thu\",9-13,\n" +
+  "PHY101,Applied Physics,BS,Dr. Imran Malik (AB),Regular,BEE-9,3+1,\"1,2\",SNS Lab,,,\n" +
+  "PHY101,Applied Physics,BS,Ms. Sabeen Sher Afghan (CD),Regular,BEE-9,3+1,\"3,4\",SNS Lab,,,\n" +
+  "CS113,Introduction to Programming,DoC,Ms. Maryam Saeed (ABC),Regular,BEE-9,1+1,,Computing Lab-1,,,SEECS Seminar Hall\n" +
+  "CS113,Introduction to Programming,DoC,Dr. Syed Taha Ali (D),Regular,BEE-9,1+1,4,Computing Lab-1,Fri,9-13,\n" +
+  "ME104,Engineering Drawing,EE,Mr. Naqash Afzal (ABCD),Regular,BEE-9,0+1,\"1,2,3,4\",SNS Lab,,,\n" +
+  "HU100,English,HU,Ms. Maryam Fatima (ABCD),Regular,BEE-9,2+0,\"1,2,3,4\",,,,\n" +
+  "HU107,Pakistan Studies,HU,Mr. Amjid (ABCD),Regular,BEE-9,2+0,\"1,2,3,4\",,,,\n";
 
 export default function ScheduleGenerator() {
-  const params = useLocalSearchParams();
-  const router = useRouter();
-  const [csvData, setCsvData] = useState<any[]>([]);
+  const p = useLocalSearchParams<{
+    scheduleId?: string; scheduleTitle?: string; startHour?: string; endHour?: string;
+    activeDays?: string; breakStart?: string; breakEnd?: string; lectureDuration?: string; breakTime?: string;
+  }>();
+  const scheduleId = p.scheduleId ?? "";
+  const startHour = parseInt(p.startHour || "9", 10);
+  const endHour = parseInt(p.endHour || "17", 10);
+  const activeDays = (p.activeDays || "Mon,Tue,Wed,Thu,Fri").split(",").map((d) => d.trim()).filter(Boolean);
+  const btp = p.breakTime ? String(p.breakTime).split("-") : null;
+  const brk = p.breakStart && p.breakEnd
+    ? { s: parseInt(p.breakStart, 10), e: parseInt(p.breakEnd, 10) }
+    : btp && btp.length === 2
+    ? { s: parseInt(btp[0], 10) || 13, e: parseInt(btp[1], 10) || (parseInt(btp[0], 10) || 13) + 1 }
+    : null;
+  const slotMin = Math.max(15, parseInt(p.lectureDuration || "60", 10) || 60);
+
   const [fileName, setFileName] = useState("");
-  const [generated, setGenerated] = useState<any[]>([]);
-  const [generating, setGenerating] = useState(false);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState("");
-  React.useEffect(() => { setError(""); }, []);
+  const [rows, setRows] = useState<Row[]>([]);
+  const [parseWarn, setParseWarn] = useState<string[]>([]);
+  const [genWarn, setGenWarn] = useState<string[]>([]);
+  const [entries, setEntries] = useState<Entry[]>([]);
+  const [busy, setBusy] = useState<"" | "gen" | "import">("");
+  const [imported, setImported] = useState(false);
+  const [status, setStatus] = useState<{ ok: boolean; msg: string } | null>(null);
 
-  const activeDays = String(params.activeDays||"").split(",").filter(Boolean);
-  const startHour = parseInt(String(params.startHour||"9"));
-  const endHour = parseInt(String(params.endHour||"17"));
-  const breakStart = parseInt(String(params.breakStart||"13")) * 60;
-  const breakEnd = parseInt(String(params.breakEnd||"14")) * 60;
+  const requiredSlots = useMemo(
+    () => Math.round(rows.reduce((t, r) => t + (r.lec * slotMin + r.lab * 180) * r.sections.length, 0) / 6) / 10,
+    [rows, slotMin]);
 
-  const handleUpload = async () => {
+  const downloadDraft = async () => {
     try {
-      const res = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "application/csv", "*/*"], copyToCacheDirectory: true });
-      if (res.canceled) return;
-      const asset = res.assets?.[0] || (res as any);
-      const uri = asset.uri;
-      setFileName(asset.name || "draft.csv");
+      if (Platform.OS === "web" && typeof document !== "undefined") {
+        const blob = new Blob([TEMPLATE], { type: "text/csv" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url; a.download = "Draft_Schedule.csv";
+        document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+      } else {
+        const path = FileSystem.cacheDirectory + "Draft_Schedule.csv";
+        await FileSystem.writeAsStringAsync(path, TEMPLATE);
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(path, { mimeType: "text/csv" });
+      }
+    } catch (e: any) { Alert.alert("Download failed", String(e?.message || e)); }
+  };
+
+  const upload = async () => {
+    try {
+      const res = await DocumentPicker.getDocumentAsync({ type: ["text/csv", "text/comma-separated-values", "*/*"] });
+      if (res.canceled || !res.assets?.length) return;
+      const a = res.assets[0];
       let text = "";
-      if (Platform.OS === "web") {
-        const response = await fetch(uri);
-        text = await response.text();
-      } else {
-        try {
-          const response = await fetch(uri);
-          text = await response.text();
-        } catch (fsErr: any) {
-          throw new Error("Could not read file: " + fsErr.message);
-        }
-      }
-      const lines = text.split(/\r?\n/).filter(l => l.trim());
-      const headers = lines[0].split(",").map(h => h.trim().replace(/\r/,"").replace(/"/g,""));
-      const data = lines.slice(1).map(line => {
-        const vals = line.split(",");
-        const obj: Record<string,string> = {};
-        headers.forEach((h,i) => { obj[h] = (vals[i]||"").trim().replace(/\r/,"").replace(/"/g,""); });
-        return obj;
-      }).filter(r => Object.values(r).some(v => v));
-      setCsvData(data);
-      setGenerated([]);
-      setError("");
-    } catch(e: any) { setError("Upload failed: " + e.message); }
+      if (Platform.OS === "web") text = await (await fetch(a.uri)).text();
+      else text = await FileSystem.readAsStringAsync(a.uri);
+      const parsed = parseRows(text);
+      setRows(parsed.rows); setParseWarn(parsed.warnings);
+      setFileName(a.name || "schedule.csv");
+      setEntries([]); setGenWarn([]); setImported(false);
+    } catch (e: any) { Alert.alert("Upload failed", String(e?.message || e)); }
   };
 
-  const handleGenerate = () => {
-    if (!csvData.length) { setError("Upload CSV first"); return; }
-    setGenerating(true);
+  const runGenerate = () => {
+    setBusy("gen");
     setTimeout(() => {
-      try {
-        const entries = generateSchedule(csvData, activeDays, startHour, endHour, breakStart, breakEnd);
-        setGenerated(entries);
-        setError("");
-      } catch(e: any) { setError("Generation failed: " + e.message); }
-      setGenerating(false);
-    }, 100);
+      const out = generate(rows, activeDays, startHour, endHour, brk, slotMin);
+      setEntries(out.entries); setGenWarn(out.warnings); setBusy("");
+    }, 50);
   };
 
-  const handleImport = async () => {
-    if (!generated.length || !params.scheduleId) return;
-    setImporting(true);
+  const runImport = async () => {
+    setBusy("import");
+    setStatus(null);
     try {
-      const domain = process.env.EXPO_PUBLIC_DOMAIN || "classes-record.onrender.com";
-      // Wake up Render free tier if sleeping
-      try { await fetch(`https://${domain}/api/health`, { signal: AbortSignal.timeout(5000) }); } catch {}
-      const res = await fetch(`https://${domain}/api/import/schedule`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          scheduleId: parseInt(String(params.scheduleId)),
-          rows: generated
-        })
+      const to12 = (t: string) => {
+        const [h, mm] = t.split(":").map((v) => parseInt(v, 10) || 0);
+        const ap = h >= 12 ? "PM" : "AM";
+        const h12 = h % 12 === 0 ? 12 : h % 12;
+        return `${String(h12).padStart(2, "0")}:${String(mm).padStart(2, "0")} ${ap}`;
+      };
+      // serve.js expects { rows, scheduleId } with capitalised keys & 12-hour times
+      const rows = entries.map((e) => ({
+        Faculty: e.faculty, Subject: e.subject, Class: e.class, Deptt: e.dept,
+        Day: e.day, Time: to12(e.time), EndTime: to12(e.endTime),
+        Location: e.location, LecLab: e.lecLab, Elective: e.elective, UserEmail: "",
+      }));
+      const base = Platform.OS === "web" ? "" : `https://${process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online"}`;
+      const r = await fetch(`${base}/api/import/schedule`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scheduleId, rows }),
       });
-      const data = await res.json();
-      if (data.success || data.imported || data.inserted) {
-        Alert.alert("Done", `${data.imported || data.inserted || generated.length} entries imported.`);
-        router.back();
-      } else {
-        setError("Import failed: " + JSON.stringify(data));
-      }
-    } catch(e: any) { setError("Import error: " + e.message); }
-    setImporting(false);
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok || j?.success === false) throw new Error(j?.message || j?.error || `Server ${r.status}`);
+      setImported(true);
+      setStatus({ ok: true, msg: `✓ Imported ${j?.imported ?? entries.length} entries — opening dashboard…` });
+      setTimeout(() => { try { router.replace({ pathname: "/schedule-dashboard", params: p as any }); } catch {} }, 1200);
+    } catch (e: any) {
+      setStatus({ ok: false, msg: `Import failed: ${String(e?.message || e)}` });
+    }
+    setBusy("");
   };
 
-  const s = StyleSheet.create({
-    container: { flex:1, backgroundColor: colors.bg },
-    header: { backgroundColor: colors.primary, padding: 20, paddingTop: 50 },
-    hTitle: { fontSize:20, fontWeight:"700", color:"#fff" },
-    hSub: { fontSize:13, color:"rgba(255,255,255,0.8)", marginTop:4 },
-    body: { padding:16 },
-    card: { backgroundColor:colors.card, borderRadius:12, padding:14, marginBottom:12, shadowColor:"#000", shadowOpacity:0.05, shadowRadius:6, elevation:2 },
-    btn: { borderRadius:10, paddingVertical:13, paddingHorizontal:16, alignItems:"center", justifyContent:"center", flexDirection:"row", gap:8 },
-    btnTxt: { fontSize:14, fontWeight:"600" },
-    row: { flexDirection:"row", borderBottomWidth:1, borderColor:"#eee", paddingVertical:6 },
-    cell: { flex:1, fontSize:11, color:colors.text },
-    errBox: { backgroundColor:"#FFEBEE", borderRadius:8, padding:10, marginBottom:10 },
-    errTxt: { color:"#c62828", fontSize:12 },
-  });
+  const Warn = ({ list, title }: { list: string[]; title: string }) =>
+    !list.length ? null : (
+      <View style={st.warnBox}>
+        <Text style={st.warnTitle}>⚠ {title} ({list.length})</Text>
+        {list.map((w, i) => <Text key={i} style={st.warnTxt}>• {w}</Text>)}
+      </View>
+    );
 
   return (
-    <View style={s.container}>
-      <View style={s.header}>
-        <TouchableOpacity onPress={() => router.back()} style={{ flexDirection:"row", alignItems:"center", gap:6, marginBottom:10 }}>
-          <Feather name="arrow-left" size={18} color="#fff"/><Text style={{ color:"#fff", fontWeight:"600" }}>Back</Text>
+    <View style={st.root}>
+      <View style={st.header}>
+        <TouchableOpacity onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }} style={st.backBtn}>
+          <Feather name="arrow-left" size={18} color="#fff" />
+          <Text style={st.backTxt}>Back</Text>
         </TouchableOpacity>
-        <Text style={s.hTitle}>AI Schedule Generator</Text>
-        <Text style={s.hSub}>{params.scheduleTitle} · {activeDays.join(", ")} · {startHour}:00–{endHour}:00</Text>
+        <Text style={st.h1}>AI Schedule Generator</Text>
+        <Text style={st.h2}>
+          {p.scheduleTitle || "Schedule"} · {activeDays.join(", ")} · {startHour}:00–{endHour}:00 · {slotMin} min
+          {brk ? ` · Break ${brk.s}:00–${brk.e}:00` : ""}
+        </Text>
       </View>
-      <ScrollView style={s.body}>
-        {!!error && <View style={s.errBox}><Text style={s.errTxt}>{error}</Text></View>}
 
-        <View style={s.card}>
-          <TouchableOpacity style={[s.btn,{backgroundColor:"#1565C0",marginBottom:8}]} onPress={async ()=>{
-        {
-          const csv=["Subject Code,Subjects,Department,Instructor Name with Sections,Regular/Elective,Class,Credit Hrs",
-"OTM455,Engineering Project Management,HU,Mr. Talha Aleem Khawja (ABCD),Regular,BEE-6,2+0",
-"HU212,Technical & Business Writing,HU,Ms. Komal Malik (ABCD),Regular,BEE-6,2+0",
-"EE342,Microwave Engineering,EE,Mr. Ahsan Azhar (A),Regular,BEE-6,3+1",
-"EE342,Microwave Engineering,EE,Dr. Muhammad Omar Khan (B),Regular,BEE-6,3+1",
-"EE342,Microwave Engineering,EE,Ms. Maira Islam (CD),Regular,BEE-6,3+1",
-"MATH351,Numerical Methods,BS,Mr. Abid Kamran (AB),Regular,BEE-7,3+0",
-"MATH351,Numerical Methods,BS,Mr. Muhammad Usman (CD),Regular,BEE-7,3+0",
-"EE260,Electrical Machines,EE,Mr. Muhammad Tahir Rasheed (AB),Regular,BEE-7,3+1",
-"EE260,Electrical Machines,EE,Ms. Neelma Naz (CD),Regular,BEE-7,3+1",
-"EE313,Electronic Circuit Design,EE,Mr. Shakeel Alvi (AB),Regular,BEE-7,3+1",
-"EE313,Electronic Circuit Design,EE,Mr. Mansoor Shaukat (CD),Regular,BEE-7,3+1",
-"EE351,Communication Systems,EE,Mr. Muhammad Ramzan (AB),Regular,BEE-7,3+1",
-"EE351,Communication Systems,EE,Dr. Saad Qaisar (CD),Regular,BEE-7,3+1",
-"EE241,Electromagnetic Field Theory,EE,Dr. Salman Abdul Ghafoor (AB),Regular,BEE-7,3+0",
-"EE241,Electromagnetic Field Theory,EE,Mr. Yasir Iqbal (CD),Regular,BEE-7,3+0",
-"EE221,Digital Logic Design,EE,Mr. Nasir Mahmood (AB),Regular,BEE-8,3+1",
-"EE221,Digital Logic Design,EE,Mr. Arshad Nazir (CD),Regular,BEE-8,3+1",
-"CS250,Data Structures and Algorithms,DoC,Dr. Arshad Ali (ABCD),Regular,BEE-8,3+1",
-"EE211,Electrical Network Analysis,EE,Dr. Latif Anjum (AB),Regular,BEE-8,3+1",
-"EE211,Electrical Network Analysis,EE,Mr. Habeel Ahmed (CD),Regular,BEE-8,3+1",
-"ME102,Thermodynamics,EE,Mr. Ikhlaq Khattak (ABCD),Regular,BEE-8,2+0",
-"MATH232,Complex Variables and Transforms,BS,Mr. Saeed Afzal (AB),Regular,BEE-8,3+0",
-"MATH232,Complex Variables and Transforms,BS,Dr. Sajid Ali (CD),Regular,BEE-8,3+0",
-"MATH101,Calculus and Analytical Geometry,BS,Dr. Quanita Kiran (AB),Regular,BEE-9,3+0",
-"MATH101,Calculus and Analytical Geometry,BS,Dr. Mehwish Rubab (CD),Regular,BEE-9,3+0",
-"PHY101,Applied Physics,BS,Dr. Imran Malik (AB),Regular,BEE-9,3+1",
-"PHY101,Applied Physics,BS,Ms. Sabeen Sher Afghan (CD),Regular,BEE-9,3+1",
-"CS113,Introduction to Programming,DoC,Ms. Maryam Saeed (ABC),Regular,BEE-9,1+1",
-"CS113,Introduction to Programming,DoC,Dr. Syed Taha Ali (D),Regular,BEE-9,1+1",
-"ME104,Engineering Drawing,EE,Mr. Naqash Afzal (ABCD),Regular,BEE-9,0+1",
-"HU100,English,HU,Ms. Maryam Fatima (ABCD),Regular,BEE-9,2+0",
-"HU107,Pakistan Studies,HU,Mr. Amjid (ABCD),Regular,BEE-9,2+0",
-"SE430,Software Project Management,DoC,Dr. Seemab Latif (AB),Regular,BE(SE)-5,3+0",
-"MGT271,Entrepreneurship,DoC,Mr. Maajid Maqbool (AB),Regular,BE(SE)-5,2+0",
-"CS330,Operating Systems,DoC,Dr. M. Ali Tahir (AB),Regular,BE(SE)-6,3+1",
-"SE311,Software Design and Architecture,DoC,Dr. Qaiser Riaz (AB),Regular,BE(SE)-6,3+1",
-"CS344,Web Engineering,DoC,Dr. Asad Ali Shah (AB),Regular,BE(SE)-6,3+1",
-"HU223,Professional Ethics,HU,Dr. A R Baluch (AB),Regular,BE(SE)-6,3+0",
-"HU210,Technical Writing,HU,Ms. Hina Hayat (AB),Regular,BE(SE)-6,3+0",
-"CS250,Data Structures and Algorithms,DoC,Dr Muhammad Shahzad (AB),Regular,BE(SE)-7,3+1",
-"CS220,Database Systems,DoC,Ms Hirra Anwar (AB),Regular,BE(SE)-7,3+1",
-"SE200,Software Engineering,DoC,Dr Rafia Mumtaz (AB),Regular,BE(SE)-7,3+0",
-"MATH361,Probability and Statistics,BS,Ms. Ansar Shehzadi (AB),Regular,BE(SE)-7,3+0",
-"MATH222,Linear Algebra,BS,Mr. Zeeshan Asghar (AB),Regular,BE(SE)-7,3+0",
-"CS110,Fundamentals of Computer Programming,DoC,Mr. Jaudat Mamoon (AB),Regular,BE(SE)-8,3+1",
-"CS100,Fundamentals of ICT,DoC,Ms. Haleemah Zia (AB),Regular,BE(SE)-8,2+1",
-"MATH161,Discrete Mathematics,BS,Mr. Moin ud Din (AB),Regular,BE(SE)-8,3+0",
-"MATH111,Calculus-I,BS,Dr. Ibrar Hussain (AB),Regular,BE(SE)-8,3+0",
-"HU101,Islamic Studies,HU,Ms. Asma Hussain Khan (AB),Regular,BE(SE)-8,2+0",
-"HU111,Communication and Interpersonal Skills,HU,Mr. Usman Khawar (AB),Regular,BE(SE)-8,3+0",
-"CS354,Compiler Construction,DoC,Dr Sohail Iqbal (A),Regular,BS(CS)-4,3+1",
-"CS354,Compiler Construction,DoC,Mr. Saqib (BC),Regular,BS(CS)-4,3+1",
-"MGT271,Entrepreneurship,DoC,Mr. Jaudat Mamoon (A),Regular,BS(CS)-4,2+0",
-"MGT271,Entrepreneurship,DoC,Dr. Imran Mehmood (B),Regular,BS(CS)-4,2+0",
-"MGT271,Entrepreneurship,DoC,Mr. Maajid Maqbool (C),Regular,BS(CS)-4,2+0",
-"ECO130,Engineering Economics,HU,Mr. Muhammad Yousaf (ABC),Regular,BS(CS)-4,2+0",
-"CS330,Operating Systems,DoC,Dr. Muhammad Zeeshan (AB),Regular,BS(CS)-5,3+1",
-"CS330,Operating Systems,DoC,Dr Muazzam Khattak (C),Regular,BS(CS)-5,3+1",
-"SE200,Software Engineering,DoC,Ms. Ayesha Kanwal (ABC),Regular,BS(CS)-5,3+0",
-"EE353,Computer Networks,DoC,Dr Arsalan Ahmed (AB),Regular,BS(CS)-5,3+1",
-"EE353,Computer Networks,DoC,Dr. Nadeem Ahmad (C),Regular,BS(CS)-5,3+1",
-"CS213,Adv. Programming,DoC,Mr. Fahad Satti (AB),Regular,BS(CS)-5,3+1",
-"CS213,Adv. Programming,DoC,Mr. Shamyl Bin Mansoor (AB),Regular,BS(CS)-5,3+1",
-"CS370,Artificial Intelligence,DoC,Dr Omar Arif (AB),Regular,BS(CS)-5,3+1",
-"CS370,Artificial Intelligence,DoC,Dr Imran Malik (C),Regular,BS(CS)-5,3+1",
-"CS250,Data Structures and Algorithms,DoC,Dr. Faisal Shafait (AB),Regular,BS(CS)-6,3+1",
-"CS250,Data Structures and Algorithms,DoC,Mr. Shamyl Bin Mansoor (C),Regular,BS(CS)-6,3+1",
-"CS220,Database Systems,DoC,Mr. Mujtaba Haider (AB),Regular,BS(CS)-6,3+1",
-"CS220,Database Systems,DoC,Dr. Sharifullah Khan (C),Regular,BS(CS)-6,3+1",
-"CS235,Computer Organization and Assembly Language,EE,Dr. Rehan Ahmed (A),Regular,BS(CS)-6,3+1",
-"CS235,Computer Organization and Assembly Language,EE,Mr. Taufeeq ur Rehman (BC),Regular,BS(CS)-6,3+1",
-"MATH222,Linear Algebra,BS,Dr. Hina Munir Dutt (ABC),Regular,BS(CS)-6,3+0",
-"HU212,Technical and Business Writing,HU,Ms. Bushra Sardar Khan (ABC),Regular,BS(CS)-6,2+0",
-"CS110,Fundamentals of Computer Programming,DoC,Ms. Sana Khalique (AB),Regular,BS(CS)-7,3+1",
-"CS110,Fundamentals of Computer Programming,DoC,Dr. Asad Waqar Malik (C),Regular,BS(CS)-7,3+1",
-"CS100,Fundamentals of ICT,DoC,Dr Muhammad Muneebullah (ABC),Regular,BS(CS)-7,2+1",
-"MATH161,Discrete Mathematics,BS,Dr. Adnan Aslam (ABC),Regular,BS(CS)-7,3+0",
-"MATH111,Calculus-I,BS,Dr. Naila Amir (ABC),Regular,BS(CS)-7,3+0",
-"HU109,Communication Skills,HU,Ms. Sehrish Aslam (AB),Regular,BS(CS)-7,2+0",
-"HU109,Communication Skills,HU,Mr. Usman Khawar (C),Regular,BS(CS)-7,2+0",
-"HU101,Islamic Studies,HU,Mr. Ammar Ahmed (ABC),Regular,BS(CS)-7,2+0"].join("\n");
-          if (Platform.OS === "web") {
-            const blob=new Blob([csv],{type:"text/csv"});
-            const url=URL.createObjectURL(blob);
-            const a=document.createElement("a");
-            a.href=url;a.download="Testing_Schedule.csv";
-            document.body.appendChild(a);a.click();
-            document.body.removeChild(a);URL.revokeObjectURL(url);
-          } else {
-            try {
-              const { cacheDirectory, writeAsStringAsync, EncodingType } = await import("expo-file-system/legacy");
-              const path = (cacheDirectory ?? "") + "Testing_Schedule.csv";
-              await writeAsStringAsync(path, csv, { encoding: EncodingType.UTF8 });
-              await Sharing.shareAsync(path, { mimeType: "text/csv", dialogTitle: "Save Draft CSV" });
-            } catch(e: any) {
-              Alert.alert("Error", e.message);
-            }
-          }
-        }
-      }}>
-        <Feather name="download" size={16} color="#fff"/>
-        <Text style={[s.btnTxt,{color:"#fff"}]}>Download Draft</Text>
-      </TouchableOpacity>
-      <TouchableOpacity style={[s.btn,{backgroundColor:colors.primary}]} onPress={handleUpload}>
-            <Feather name="upload" size={16} color="#fff"/>
-            <Text style={[s.btnTxt,{color:"#fff"}]}>{fileName||"Upload Draft CSV"}</Text>
+      <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 14, paddingBottom: 40 }}>
+        <View style={st.card}>
+          <TouchableOpacity style={[st.btn, { backgroundColor: "#1565C0" }]} onPress={downloadDraft}>
+            <Feather name="download" size={15} color="#fff" />
+            <Text style={st.btnTxt}>Download Draft</Text>
           </TouchableOpacity>
-          {!!fileName && <Text style={{fontSize:11,color:colors.success,marginTop:6,textAlign:"center"}}>\u2713 {csvData.length} rows loaded</Text>}
+          <TouchableOpacity style={[st.btn, { backgroundColor: fileName ? "#1B5E20" : "#1565C0" }]} onPress={upload}>
+            <Feather name="upload" size={15} color="#fff" />
+            <Text style={st.btnTxt}>{fileName || "Upload Draft CSV"}</Text>
+          </TouchableOpacity>
+          {rows.length > 0 && (
+            <Text style={st.okTxt}>✓ {rows.length} rows loaded · {requiredSlots} weekly hours required</Text>
+          )}
+          <Warn list={parseWarn} title="CSV warnings" />
         </View>
 
-        {csvData.length > 0 && (
-          <View style={s.card}>
-            <TouchableOpacity style={[s.btn,{backgroundColor:"#E65100"}]} onPress={handleGenerate} disabled={generating}>
-              {generating ? <ActivityIndicator color="#fff" size="small"/> : <Feather name="cpu" size={16} color="#fff"/>}
-              <Text style={[s.btnTxt,{color:"#fff"}]}>{generating?"Generating...":"Generate Schedule with AI"}</Text>
-            </TouchableOpacity>
-          </View>
-        )}
+        <View style={st.card}>
+          <TouchableOpacity
+            disabled={!rows.length || busy !== ""}
+            style={[st.btn, { backgroundColor: rows.length ? "#E65100" : "#9E9E9E" }]}
+            onPress={runGenerate}>
+            {busy === "gen" ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="cpu" size={15} color="#fff" />}
+            <Text style={st.btnTxt}>Generate Schedule with AI</Text>
+          </TouchableOpacity>
+          <Warn list={genWarn} title="Generation warnings" />
+        </View>
 
-        {generated.length > 0 && (
-          <View style={s.card}>
-            <View style={{flexDirection:"row",paddingBottom:6,borderBottomWidth:1,borderColor:"#eee"}}>
-              {["Faculty","Subject","Class","Day","Time","End","L/L"].map(h=><Text key={h} style={[s.cell,{fontWeight:"700"}]}>{h}</Text>)}
-            </View>
-            {generated.slice(0,25).map((r,i)=>(
-              <View key={i} style={s.row}>
-                <Text style={s.cell}>{r.Faculty}</Text>
-                <Text style={s.cell}>{r.Subject}</Text>
-                <Text style={s.cell}>{r.Class}</Text>
-                <Text style={s.cell}>{r.Day}</Text>
-                <Text style={s.cell}>{r.Time}</Text>
-                <Text style={s.cell}>{r.EndTime}</Text>
-                <Text style={[s.cell,{color:r.LecLab==="Lab"?colors.purple:r.Elective?"#E65100":colors.text}]}>{r.LecLab}{r.Elective?" E":""}</Text>
+        {entries.length > 0 && (
+          <View style={st.card}>
+            <Text style={st.previewTitle}>Preview — {entries.length} entries</Text>
+            <ScrollView horizontal>
+              <View>
+                <View style={[st.tr, st.thead]}>
+                  {["Day", "Time", "Class", "Subject", "Faculty", "Location", "Type"].map((h) => (
+                    <Text key={h} style={[st.td, st.th]}>{h}</Text>
+                  ))}
+                </View>
+                {entries.slice(0, 40).map((e, i) => (
+                  <View key={i} style={[st.tr, i % 2 ? st.zebra : null]}>
+                    <Text style={st.td}>{e.day}</Text>
+                    <Text style={st.td}>{e.time}–{e.endTime}</Text>
+                    <Text style={st.td}>{e.class}</Text>
+                    <Text style={[st.td, { width: 180 }]} numberOfLines={1}>{e.subject}</Text>
+                    <Text style={[st.td, { width: 160 }]} numberOfLines={1}>{e.faculty}</Text>
+                    <Text style={st.td}>{e.location || "—"}</Text>
+                    <Text style={[st.td, { color: e.lecLab === "Lab" ? "#E65100" : "#1565C0" }]}>{e.lecLab}</Text>
+                  </View>
+                ))}
               </View>
-            ))}
-            {generated.length>25&&<Text style={{padding:10,textAlign:"center",fontSize:11,color:colors.muted}}>...+{generated.length-25} more · Labs=purple · Electives=E</Text>}
-            <TouchableOpacity style={[s.btn,{backgroundColor:colors.success,marginTop:10}]} onPress={handleImport} disabled={importing}>
-              {importing?<ActivityIndicator color="#fff" size="small"/>:<Feather name="check" size={16} color="#fff"/>}
-              <Text style={[s.btnTxt,{color:"#fff"}]}>{importing?"Importing...":"Import "+generated.length+" Entries to Schedule"}</Text>
+            </ScrollView>
+            {entries.length > 40 && <Text style={st.moreTxt}>…and {entries.length - 40} more</Text>}
+            <TouchableOpacity
+              disabled={busy !== "" || imported}
+              style={[st.btn, { backgroundColor: imported ? "#1B5E20" : "#2E7D32", marginTop: 12 }]}
+              onPress={runImport}>
+              {busy === "import" ? <ActivityIndicator color="#fff" size="small" /> : <Feather name="check-circle" size={15} color="#fff" />}
+              <Text style={st.btnTxt}>{imported ? "Imported ✓" : `Import ${entries.length} Entries to Schedule`}</Text>
             </TouchableOpacity>
+            {status && (
+              <Text style={[st.statusTxt, { color: status.ok ? "#1B5E20" : "#B71C1C" }]}>{status.msg}</Text>
+            )}
           </View>
         )}
       </ScrollView>
     </View>
   );
 }
+
+const st = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#F1F4F8" },
+  header: { backgroundColor: "#0D47A1", paddingTop: Platform.OS === "web" ? 20 : 48, paddingBottom: 16, paddingHorizontal: 16 },
+  backBtn: { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 },
+  backTxt: { color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 },
+  h1: { color: "#fff", fontFamily: "Inter_700Bold", fontSize: 20 },
+  h2: { color: "#BBDEFB", fontFamily: "Inter_400Regular", fontSize: 12, marginTop: 2 },
+  card: { backgroundColor: "#fff", borderRadius: 14, padding: 12, marginBottom: 14, elevation: 1 },
+  btn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderRadius: 10, paddingVertical: 12, marginBottom: 8 },
+  btnTxt: { color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13.5 },
+  okTxt: { color: "#1B5E20", fontFamily: "Inter_600SemiBold", fontSize: 12, textAlign: "center", marginTop: 2 },
+  warnBox: { backgroundColor: "#FFF8E1", borderRadius: 10, padding: 10, marginTop: 8, borderWidth: 1, borderColor: "#FFE082" },
+  warnTitle: { fontFamily: "Inter_700Bold", fontSize: 12.5, color: "#8D6E00", marginBottom: 4 },
+  warnTxt: { fontFamily: "Inter_400Regular", fontSize: 11.5, color: "#6D5400", marginBottom: 2 },
+  previewTitle: { fontFamily: "Inter_700Bold", fontSize: 14, color: "#0D47A1", marginBottom: 8 },
+  tr: { flexDirection: "row" },
+  thead: { backgroundColor: "#E3F2FD", borderRadius: 6 },
+  zebra: { backgroundColor: "#FAFAFA" },
+  td: { width: 100, paddingVertical: 6, paddingHorizontal: 6, fontFamily: "Inter_400Regular", fontSize: 11.5, color: "#263238" },
+  th: { fontFamily: "Inter_700Bold", color: "#0D47A1" },
+  statusTxt: { fontFamily: "Inter_600SemiBold", fontSize: 12.5, textAlign: "center", marginTop: 8 },
+  moreTxt: { fontFamily: "Inter_400Regular", fontSize: 11.5, color: "#607D8B", marginTop: 6, textAlign: "center" },
+});

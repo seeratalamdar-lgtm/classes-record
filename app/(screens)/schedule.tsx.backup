@@ -1,5 +1,4 @@
 // @ts-nocheck
-import DateField from "@/components/DateField";
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useCallback } from "react";
@@ -24,24 +23,35 @@ import { ExcelImportButton, ImportPanel } from "@/components/ExcelImportButton";
 
 const ALL_DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 
-function TIME_SLOTS_FOR(startH: number, endH: number, stepMin: number = 60, brkSMin: number = -1, brkEMin: number = -1) {
-  const fmt = (mins: number) => {
-    const H = Math.floor(mins / 60), M = mins % 60;
-    const h12 = H % 12 === 0 ? 12 : H % 12;
-    const ap = H >= 12 ? "PM" : "AM";
-    return `${h12.toString().padStart(2,"0")}:${M.toString().padStart(2,"0")} ${ap}`;
-  };
-  const out: { label: string; shortLabel: string; endLabel: string; hour: number }[] = [];
-  const startMin = startH * 60, endMin = endH * 60;
-  const hasBrk = brkSMin > startMin && brkEMin > brkSMin && brkSMin < endMin;
-  for (let x = startMin; x + stepMin <= (hasBrk ? brkSMin : endMin); x += stepMin)
-    out.push({ label: `${fmt(x)}–${fmt(x + stepMin)}`, shortLabel: fmt(x), endLabel: fmt(x + stepMin), hour: x });
-  if (hasBrk) {
-    out.push({ label: `${fmt(brkSMin)}–${fmt(brkEMin)}`, shortLabel: fmt(brkSMin), endLabel: fmt(brkEMin), hour: brkSMin });
-    for (let x = brkEMin; x + stepMin <= endMin; x += stepMin)
-      out.push({ label: `${fmt(x)}–${fmt(x + stepMin)}`, shortLabel: fmt(x), endLabel: fmt(x + stepMin), hour: x });
+function TIME_SLOTS_FOR(startH: number, endH: number, durationMinutes: number = 45) {
+  const slots = [];
+  const slotDuration = durationMinutes;
+  
+  for (let h = startH; h < endH; h++) {
+    for (let m = 0; m < 60; m += slotDuration) {
+      if (m + slotDuration > 60 && h + 1 >= endH) continue;
+      
+      const startTotal = h * 60 + m;
+      const endTotal = startTotal + slotDuration;
+      const endHr = Math.floor(endTotal / 60);
+      const endMin = endTotal % 60;
+      
+      const fmt = (hour: number, min: number) => {
+        const h12 = hour % 12 || 12;
+        const ampm = hour < 12 ? "AM" : "PM";
+        return `${h12.toString().padStart(2,"0")}:${min.toString().padStart(2,"0")} ${ampm}`;
+      };
+      
+      slots.push({ 
+        label: `${fmt(h, m)}–${fmt(endHr, endMin)}`, 
+        shortLabel: fmt(h, m), 
+        hour: h,
+        startMin: m,
+        duration: slotDuration
+      });
+    }
   }
-  return out;
+  return slots;
 }
 
 function normalizeDay(d: string): string {
@@ -135,11 +145,8 @@ export default function ScheduleScreen() {
   const router = useRouter();
   const { width: screenWidth } = useWindowDimensions();
   const [clipboard, setClipboard] = React.useState<ScheduleRow | null>(null);
-  const { scheduleId: scheduleIdParam, scheduleTitle, startHour: startHourParam, endHour: endHourParam, activeDays: activeDaysParam, isPublic: isPublicParam, breakTime: breakTimeParam, lectureDuration: lectureDurationParam } = useLocalSearchParams<{ scheduleId?: string; scheduleTitle?: string; startHour?: string; endHour?: string; activeDays?: string; isPublic?: string; breakTime?: string; lectureDuration?: string }>();
+  const { scheduleId: scheduleIdParam, scheduleTitle, startHour: startHourParam, endHour: endHourParam, activeDays: activeDaysParam, isPublic: isPublicParam, breakTime: breakTimeParam, lectureMins: lectureMinsParam } = useLocalSearchParams<{ scheduleId?: string; scheduleTitle?: string; startHour?: string; endHour?: string; activeDays?: string; isPublic?: string; breakTime?: string }>();
   const breakStartHour = parseInt(String(breakTimeParam||"13-14").split("-")[0]) || 13;
-  const breakEndHourW = parseInt(String(breakTimeParam||"13-14").split("-")[1]) || (breakStartHour + 1);
-  const slotMin = Math.max(15, parseInt(String(lectureDurationParam || "60")) || 60);
-  const breakStartMin = breakStartHour * 60, breakEndMin = breakEndHourW * 60;
   const isPublicView = isPublicParam === "1";
   const scheduleId = scheduleIdParam ? Number(scheduleIdParam) : undefined;
   const [showSettings, setShowSettings] = React.useState(false);
@@ -150,14 +157,14 @@ export default function ScheduleScreen() {
     setSettingsHourStart(startHourParam ? Number(startHourParam) : 9);
     setSettingsHourEnd(endHourParam ? Number(endHourParam) : 17);
     setSettingsDays(activeDaysParam ? decodeURIComponent(activeDaysParam).split(",").filter(d => ALL_DAYS.includes(d)) : ["Mon","Tue","Wed","Thu","Fri"]);
-  }, [startHourParam, endHourParam, activeDaysParam]);
-  const startHour = startHourParam ? Number(startHourParam) : 9;
-  const endHour   = endHourParam   ? Number(endHourParam)   : 17;
-  const DAYS = activeDaysParam
-    ? decodeURIComponent(activeDaysParam).split(",").filter(d => ALL_DAYS.includes(d))
-    : ["Mon","Tue","Wed","Thu","Fri"];
+  const startHour = 7;
+  const endHour = 15;
   const HOURS = Array.from({ length: endHour - startHour }, (_, i) => i + startHour);
-  const TIME_SLOTS = TIME_SLOTS_FOR(startHour, endHour, slotMin, breakStartMin, breakEndMin);
+  const TIME_SLOTS = TIME_SLOTS_FOR(startHour, endHour, 45);
+    : ["Mon","Tue","Wed","Thu","Fri"];
+  const DAYS = ["Mon","Tue","Wed","Thu","Fri"];
+  const HOURS = Array.from({ length: endHour - startHour }, (_, i) => i + startHour);
+  const TIME_SLOTS = TIME_SLOTS_FOR(startHour, endHour, 45);
   const DAY_FULL: Record<string,string> = { Mon:"Monday", Tue:"Tuesday", Wed:"Wednesday", Thu:"Thursday", Fri:"Friday", Sat:"Saturday", Sun:"Sunday" };
 
   useFocusEffect(
@@ -273,8 +280,8 @@ export default function ScheduleScreen() {
       return true;
     });
     const map: Record<number, Record<string, ScheduleRow[]>> = {};
-    TIME_SLOTS.forEach((sl) => {
-      map[sl.hour] = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [] };
+    HOURS.forEach((h) => {
+      map[h] = { Mon: [], Tue: [], Wed: [], Thu: [], Fri: [] };
     });
     filtered.forEach((r) => {
       let day = normalizeDay(r.Day);
@@ -289,9 +296,7 @@ export default function ScheduleScreen() {
         const d = new Date(r.EntryDate); d.setHours(0, 0, 0, 0);
         if (d < today) return;
       }
-      const mins0 = (r.SortKey || 0);
-      let h = TIME_SLOTS.length ? TIME_SLOTS[0].hour : mins0;
-      for (const sl of TIME_SLOTS) { if (sl.hour <= mins0) h = sl.hour; else break; }
+      const h = Math.floor((r.SortKey || 0) / 60);
       if (map[h]?.[day]) map[h][day].push(r);
     });
     return map;
@@ -393,7 +398,7 @@ export default function ScheduleScreen() {
     });
 
     const gridMap: Record<number, Record<string, ScheduleRow[]>> = {};
-    TIME_SLOTS.forEach((sl) => { gridMap[sl.hour] = Object.fromEntries(DAYS.map(d => [d, []])); });
+    HOURS.forEach((h) => { gridMap[h] = Object.fromEntries(DAYS.map(d => [d, []])); });
     filtered.forEach((r) => {
       let day = normalizeDay(r.Day);
       if (!day && (r.Type||"").toLowerCase()==="makeup" && r.EntryDate) {
@@ -401,9 +406,7 @@ export default function ScheduleScreen() {
         day = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][d.getDay()];
       }
       if (!DAYS.includes(day)) return;
-      const mins0 = (r.SortKey || 0);
-      let h = TIME_SLOTS.length ? TIME_SLOTS[0].hour : mins0;
-      for (const sl of TIME_SLOTS) { if (sl.hour <= mins0) h = sl.hour; else break; }
+      const h = Math.floor((r.SortKey || 0) / 60);
       if (gridMap[h]?.[day]) gridMap[h][day].push(r);
     });
 
@@ -435,11 +438,11 @@ export default function ScheduleScreen() {
     };
 
     const rowsHtml = TIME_SLOTS.map((slot) => {
-      const isBreak = slot.hour === breakStartMin;
+      const isBreak = slot.hour === breakStartHour;
       const dayMap = gridMap[slot.hour] ?? {};
       return `
         <tr class="${isBreak ? "break-row" : ""}">
-          <td class="time-cell">${slot.shortLabel}<br/>${slot.endLabel}${isBreak ? "<br/><small>BREAK</small>" : ""}</td>
+          <td class="time-cell">${slot.shortLabel}${isBreak ? "<br/><small>BREAK</small>" : ""}</td>
           ${DAYS.map((d) => `<td class="day-cell">${cellHtml(dayMap[d] ?? [])}</td>`).join("")}
         </tr>`;
     }).join("");
@@ -609,8 +612,11 @@ export default function ScheduleScreen() {
       <View style={s.header}>
         <View style={s.topRow}>
           <TouchableOpacity style={s.homeBtn} onPress={() => {
-              if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); }
-              else { router.replace("/(screens)/my-schedules" as never); }
+              try {
+                router.back();
+              } catch {
+                router.replace("/(screens)/my-schedules" as never);
+              }
             }}>
             <Feather name="arrow-left" size={13} color="#fff" />
             <Text style={s.homeBtnTxt}>Back</Text>
@@ -702,13 +708,13 @@ export default function ScheduleScreen() {
           </View>
           <ScrollView style={{ flex: 1 }} contentContainerStyle={{ paddingBottom: insets.bottom + 80 }}>
             {TIME_SLOTS.map((slot) => {
-              const isBreak = slot.hour === breakStartMin;
+              const isBreak = slot.hour === breakStartHour;
               const dayMap = allDaysGrid[slot.hour] ?? {};
               return (
                 <View key={slot.hour} style={[s.gridRow, isBreak && s.gridBreakRow]}>
                   <View style={s.gridTimeCell}>
                     <Text style={[s.gridTimeTxt, isBreak && s.gridBreakTimeTxt]}>
-                      {slot.shortLabel}{"\n"}{slot.endLabel}
+                      {slot.shortLabel}
                     </Text>
                     {isBreak && <Text style={[s.gridTimeTxt, { color: "#856404" }]}>BREAK</Text>}
                   </View>
@@ -719,25 +725,9 @@ export default function ScheduleScreen() {
                         {entries.length === 0
                           ? <TouchableOpacity onPress={() => {
                               if (clipboard && scheduleId && !isPublicView) {
-                                const m0 = slot.hour;
-                                if (m0 === breakStartMin) { if (typeof window !== "undefined") showAlert("🤖 Assistant: Cannot place a class in the break slot."); return; }
-                                const fmt2 = (mm: number) => { const H = Math.floor(mm / 60); const MM = mm % 60; const h12 = H % 12 || 12; const ap = H >= 12 ? "PM" : "AM"; return (h12 < 10 ? "0" : "") + h12 + ":" + (MM < 10 ? "0" : "") + MM + " " + ap; };
-                                const toMin2 = (t: string) => { const mt = String(t || "").match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i); if (!mt) return -1; let H = parseInt(mt[1]); const M = parseInt(mt[2]); if (mt[3].toUpperCase() === "PM" && H !== 12) H += 12; if (mt[3].toUpperCase() === "AM" && H === 12) H = 0; return H * 60 + M; };
-                                const srcS = toMin2(clipboard.Time); const srcE = toMin2(clipboard.EndTime);
-                                const durMin = srcS >= 0 && srcE > srcS ? srcE - srcS : slotMin;
-                                const tEnd = m0 + durMin;
-                                if (tEnd > endHour * 60) { if (typeof window !== "undefined") showAlert("🤖 Assistant: " + (clipboard.LecLab === "Lab" ? "This 3-hour lab" : "This class") + " would run past the day end (" + fmt2(endHour * 60) + ")."); return; }
-                                if (m0 < breakEndMin && tEnd > breakStartMin) { if (typeof window !== "undefined") showAlert("🤖 Assistant: This placement would overlap the break (" + fmt2(breakStartMin) + "–" + fmt2(breakEndMin) + ")."); return; }
-                                const clashes: string[] = [];
-                                rows.forEach((rr) => { if (rr.id === clipboard.id) return; if (normalizeDay(rr.Day) !== d) return; const a = toMin2(rr.Time); if (a < 0) return; const b0 = toMin2(rr.EndTime); const b = b0 > a ? b0 : a + slotMin; if (!(m0 < b && a < tEnd)) return;
-                                  if (rr.Faculty === clipboard.Faculty) clashes.push("⚠ FACULTY CLASH: " + rr.Faculty + " already teaches " + rr.Subject + " (" + rr.Class + ") at " + d + " " + rr.Time + (rr.Location ? " in " + rr.Location : ""));
-                                  if (clipboard.Location && rr.Location === clipboard.Location) clashes.push("⚠ ROOM CLASH: " + rr.Location + " is occupied by " + rr.Subject + " (" + rr.Class + ") at " + d + " " + rr.Time);
-                                  if (rr.Class === clipboard.Class) clashes.push("⚠ SECTION CLASH: " + rr.Class + " already has " + rr.Subject + " at " + d + " " + rr.Time);
-                                });
-                                const head = "🤖 Schedule Assistant\n" + (clashes.length ? clashes.join("\n") : "✓ No faculty, room, or section clash at " + d + " " + fmt2(m0) + "–" + fmt2(tEnd) + ".");
-                                const q2 = head + "\n\nMOVE " + clipboard.Subject + " (" + clipboard.Class + ") here? The original entry will be removed.";
-                                if (typeof window !== "undefined" && !showConfirm(q2)) return;
-                                addScheduleEntry({ faculty: clipboard.Faculty, subject: clipboard.Subject, className: clipboard.Class, dept: clipboard.Deptt || "", day: d, location: clipboard.Location || "", timeStart: fmt2(m0), timeEnd: fmt2(tEnd), lecLab: clipboard.LecLab || "Lec", elective: clipboard.Elective || "", userEmail: "", scheduleId }).then(() => { if (clipboard.id) deleteMutation.mutate(clipboard.id); setClipboard(null); qc.invalidateQueries({ queryKey: ["schedule", scheduleId] }); qc.refetchQueries({ queryKey: ["schedule", scheduleId] }); if (typeof window !== "undefined") showAlert("🤖 Moved to " + d + " " + fmt2(m0) + "–" + fmt2(tEnd)); });
+                                const h = slot.hour;
+                                const fmt2 = (n: number) => { const h12 = n % 12 || 12; const ap = n >= 12 ? "PM" : "AM"; return (h12 < 10 ? "0" : "") + h12 + ":00 " + ap; };
+                                addScheduleEntry({ faculty: clipboard.Faculty, subject: clipboard.Subject, className: clipboard.Class, dept: clipboard.Deptt || "", day: d, location: clipboard.Location || "", timeStart: fmt2(h), timeEnd: fmt2(h+1), lecLab: clipboard.LecLab || "Lec", elective: clipboard.Elective || "", userEmail: "", scheduleId }).then(() => { qc.invalidateQueries({ queryKey: ["schedule", scheduleId] }); qc.refetchQueries({ queryKey: ["schedule", scheduleId] }); if (typeof window !== "undefined") showAlert("✓ Pasted to " + d + " " + fmt2(h)); });
                               }
                             }}>
                               <Text style={[s.freeDash, clipboard && scheduleId && !isPublicView ? { color: colors.primary, fontSize: 14 } : {}]}>{clipboard && scheduleId && !isPublicView ? "＋" : "—"}</Text>
@@ -751,7 +741,7 @@ export default function ScheduleScreen() {
                                 editMode={editMode}
                                 onCopy={scheduleId && !isPublicView ? () => {
                                   if (clipboard?.id === r.id) { setClipboard(null); }
-                                  else { setClipboard(r); if (typeof window !== "undefined") showAlert("📋 Picked up: " + r.Subject + " · " + r.Class + " — tap an empty slot to MOVE it (assistant checks clashes)"); }
+                                  else { setClipboard(r); if (typeof window !== "undefined") showAlert("📋 Copied: " + r.Subject + " · " + r.Class); }
                                 } : undefined}
                                 onDelete={scheduleId && !isPublicView ? () => {
                                   if (typeof window !== "undefined" && showConfirm("Delete " + r.Subject + " from " + (r.Day || "") + "?")) {
@@ -894,7 +884,7 @@ export default function ScheduleScreen() {
             <Text style={{fontSize:13,fontWeight:"600",color:"#333",marginBottom:6}}>Date</Text>
             <View style={{marginBottom:16}}>
               {Platform.OS === "web" ? (
-                <DateField value={bulkDate} onChange={setBulkDate} />
+                <TextInput value={bulkDate} onChangeText={setBulkDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
               ) : (
                 <>
                   <TouchableOpacity onPress={() => setShowBulkDatePicker(true)} style={{padding:12,borderRadius:8,borderWidth:1,borderColor:"#ddd",backgroundColor:"#fff"}}>

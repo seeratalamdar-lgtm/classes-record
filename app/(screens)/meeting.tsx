@@ -1,4 +1,5 @@
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import DateField from "@/components/DateField";
 import React, { useState, useMemo, useCallback } from "react";
 import {
   View, Text, StyleSheet, ScrollView, TouchableOpacity,
@@ -259,7 +260,7 @@ ${deptEntries.length > 0 ? `
       <View style={s.header}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity style={s.homeBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={s.homeBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
               <Feather name="chevron-left" size={13} color="#fff" />
               <Text style={s.homeBtnTxt}>Back</Text>
             </TouchableOpacity>
@@ -283,7 +284,7 @@ ${deptEntries.length > 0 ? `
       <ScrollView style={s.scroll} contentContainerStyle={{ paddingBottom: 40 }} keyboardShouldPersistTaps="handled">
         <Text style={s.label}>Date</Text>
         {Platform.OS === "web" ? (
-          <TextInput style={s.input} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} />
+          <DateField value={date} onChange={setDate} />
         ) : (
           <>
             <TouchableOpacity onPress={() => setShowDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>

@@ -195,7 +195,7 @@ export default function StudentsScreen() {
           headers.forEach((h: string, i: number) => { obj[h] = vals[i] || ""; });
           return obj;
         }).filter((r: any) => Object.values(r).some((v: any) => v));
-        const API = "https://" + process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online" + "/api";
+        const API = "https://" + (process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online") + "/api";
         const res = await fetch(API + "/import/students/csv", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -280,7 +280,7 @@ export default function StudentsScreen() {
   return (
     <View style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={s.backBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
           <Feather name="arrow-left" size={14} color="#fff" />
           <Text style={s.backTxt}>Back</Text>
         </TouchableOpacity>

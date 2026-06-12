@@ -1,4 +1,5 @@
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
+import DateField from "@/components/DateField";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useCallback, useEffect } from "react";
 import {
@@ -308,7 +309,7 @@ export default function AdminPanelScreen() {
         >
           <Text style={{ color: "#fff", fontSize: 16, fontFamily: "Inter_700Bold" }}>{otpLoading ? "Please wait..." : otpStep ? "Verify OTP" : "Send OTP"}</Text>
         </TouchableOpacity>
-        <TouchableOpacity style={{ marginTop: 16, alignItems: "center" }} onPress={() => router.back()}>
+        <TouchableOpacity style={{ marginTop: 16, alignItems: "center" }} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
           <Text style={{ color: "#1565C0", fontSize: 14, fontFamily: "Inter_600SemiBold" }}>← Go Back</Text>
         </TouchableOpacity>
       </View>
@@ -322,7 +323,7 @@ export default function AdminPanelScreen() {
           <TouchableOpacity style={s.homeBtn} onPress={() => router.replace("/" as never)}>
             <Feather name="home" size={13} color="#fff" /><Text style={s.homeBtnTxt}>Home</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={s.homeBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={s.homeBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="arrow-left" size={13} color="#fff" /><Text style={s.homeBtnTxt}>Back</Text>
           </TouchableOpacity>
         </View>
@@ -428,7 +429,7 @@ export default function AdminPanelScreen() {
               <>
                 <Text style={s.modalLabel}>Expiry Date (YYYY-MM-DD)</Text>
                 {Platform.OS === "web" ? (
-                  <TextInput style={s.modalInput} placeholder="2026-12-31" placeholderTextColor={colors.mutedForeground} value={expiryCustomDate} onChangeText={setExpiryCustomDate} autoFocus />
+                  <DateField value={expiryCustomDate} onChange={setExpiryCustomDate} />
                 ) : (
                   <>
                     <TouchableOpacity onPress={() => setShowExpiryDatePicker(true)} style={[s.modalInput, {justifyContent:"center"}]}>

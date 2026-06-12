@@ -497,7 +497,7 @@ export default function EntryScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-          <TouchableOpacity style={[s.homeBtn, { marginBottom: 0 }]} onPress={() => router.back()}>
+          <TouchableOpacity style={[s.homeBtn, { marginBottom: 0 }]} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.homeBtnTxt}>Back</Text>
           </TouchableOpacity>

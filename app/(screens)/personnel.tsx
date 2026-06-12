@@ -1,4 +1,5 @@
 // @ts-nocheck
+import DateField from "@/components/DateField";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo } from "react";
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity, TextInput, ActivityIndicator, Modal, Platform } from "react-native";
@@ -27,6 +28,8 @@ export default function PersonnelScreen() {
   const [actionType, setActionType] = useState<ActionType>("join");
   const [personName, setPersonName] = useState("");
   const [personEmail, setPersonEmail] = useState("");
+  const [personWhatsapp, setPersonWhatsapp] = useState("");
+  const [studentName, setStudentName] = useState("");
   const [showEffectiveDatePicker, setShowEffectiveDatePicker] = useState(false);
   const [effectiveDate, setEffectiveDate] = useState(() => {
     const d = new Date();
@@ -95,21 +98,21 @@ export default function PersonnelScreen() {
       res = await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/attendance/students`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleId, className: cls, rollNo: personName.trim(), name: personName.trim(), email: personEmail.trim(), activeFrom: period }),
+        body: JSON.stringify({ scheduleId, className: cls, rollNo: personName.trim(), name: (studentName.trim() || personName.trim()), email: personEmail.trim(), whatsapp: personWhatsapp.trim(), activeFrom: period }),
       }).then(r => r.json());
       // Also set active_from
       await fetch(`https://${process.env.EXPO_PUBLIC_DOMAIN}/api/finance/persons`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scheduleId, personType: "student", name: personName.trim(), email: personEmail.trim(), activeFrom: period }),
+        body: JSON.stringify({ scheduleId, personType: "student", name: personName.trim(), email: personEmail.trim(), whatsapp: personWhatsapp.trim(), activeFrom: period }),
       });
     } else {
-      res = await addFinancePerson(scheduleId, activeTab, personName.trim(), personEmail.trim(), period, activeTab === "staff" ? designation.trim() : undefined, activeTab === "staff" ? salary.trim() : undefined);
+      res = await addFinancePerson(scheduleId, activeTab, personName.trim(), personEmail.trim(), period, activeTab === "staff" ? designation.trim() : undefined, activeTab === "staff" ? salary.trim() : undefined, personWhatsapp.trim());
     }
     setLoading(false);
     if (res.success || res.student) {
       setMsg(`✓ ${personName} joined as ${activeTab}${activeTab==="student" ? ` in ${classSubjectMap[studentClass]||studentClass}` : ""} WEF ${effectiveDate}`);
-      setPersonName(""); setPersonEmail(""); setReason(""); setStudentClass(""); setStudentSubject(""); setDesignation(""); setSalary("");
+      setPersonName(""); setPersonEmail(""); setPersonWhatsapp(""); setReason(""); setStudentClass(""); setStudentSubject(""); setDesignation(""); setSalary("");
       qc.invalidateQueries({ queryKey: ["finance-persons", scheduleId, activeTab] });
       qc.invalidateQueries({ queryKey: ["students-all", scheduleId] });
     } else { setMsg(res.error || "Failed to add"); }
@@ -159,7 +162,7 @@ export default function PersonnelScreen() {
   return (
     <View style={s.container}>
       <View style={s.header}>
-        <TouchableOpacity style={s.backBtn} onPress={() => router.back()}>
+        <TouchableOpacity style={s.backBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
           <Feather name="arrow-left" size={14} color="#fff" />
           <Text style={s.backTxt}>Back</Text>
         </TouchableOpacity>
@@ -263,12 +266,19 @@ export default function PersonnelScreen() {
                   </TouchableOpacity>
                 </>
               )}
-              <Text style={s.label}>{activeTab === "student" ? "Roll No" : "Full Name"}</Text>
+              {activeTab === "student" && (<>
+              <Text style={s.label}>Student Name</Text>
+              <TextInput style={s.input} value={studentName} onChangeText={setStudentName} placeholder="e.g. Ali Hassan" placeholderTextColor="#90A4AE" />
+            </>)}
+            <Text style={s.label}>{activeTab === "student" ? "Roll No" : "Full Name"}</Text>
               <TextInput style={s.input} placeholder={activeTab === "student" ? "e.g. 2K24-BEE-001" : "e.g. Dr. Ahmad Shah"}
                 placeholderTextColor={colors.mutedForeground} value={personName} onChangeText={setPersonName} />
               <Text style={s.label}>Email (optional)</Text>
               <TextInput style={s.input} placeholder="email@example.com" placeholderTextColor={colors.mutedForeground}
                 value={personEmail} onChangeText={setPersonEmail} autoCapitalize="none" keyboardType="email-address" />
+              <Text style={s.label}>WhatsApp (optional)</Text>
+              <TextInput style={s.input} placeholder="e.g. 03001234567" placeholderTextColor={colors.mutedForeground}
+                value={personWhatsapp} onChangeText={setPersonWhatsapp} keyboardType="phone-pad" />
               {activeTab === "staff" && <>
                 <Text style={s.label}>Designation</Text>
                 <TextInput style={s.input} placeholder="e.g. Security Guard, Peon, Driver"
@@ -279,7 +289,7 @@ export default function PersonnelScreen() {
               </>}
               <Text style={s.label}>Joining Date (exact)</Text>
               {Platform.OS === "web" ? (
-                <TextInput value={effectiveDate} onChangeText={setEffectiveDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
+                <DateField value={effectiveDate} onChange={setEffectiveDate} />
               ) : (
                               <>
                   <TouchableOpacity onPress={() => setShowEffectiveDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>
@@ -316,8 +326,7 @@ export default function PersonnelScreen() {
               </TouchableOpacity>
               <Text style={s.label}>Last Working Date (exact)</Text>
               {Platform.OS === "web" ? (
-                <TextInput style={s.input} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground}
-                  value={effectiveDate} onChangeText={setEffectiveDate} />
+                <DateField value={effectiveDate} onChange={setEffectiveDate} />
               ) : (
                               <>
                   <TouchableOpacity onPress={() => setShowEffectiveDatePicker(true)} style={[s.input, {justifyContent:"center"}]}>

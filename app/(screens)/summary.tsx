@@ -1,4 +1,5 @@
 // @ts-nocheck
+import DateField from "@/components/DateField";
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import DateTimePicker from "@react-native-community/datetimepicker";
@@ -312,7 +313,7 @@ export default function SummaryScreen() {
       <View style={s.header}>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity style={s.homeBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={s.homeBtn} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
               <Feather name="chevron-left" size={13} color="#fff" />
               <Text style={s.homeBtnTxt}>Back</Text>
             </TouchableOpacity>
@@ -339,7 +340,7 @@ export default function SummaryScreen() {
         <View style={s.filterSection}>
           <View style={s.dateRow}>
             {Platform.OS === "web" ? (
-              <TextInput value={startDate} onChangeText={setStartDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:colors.border,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1}} />
+              <View style={{ flex: 1 }}><DateField value={startDate} onChange={setStartDate} /></View>
             ) : (
               <>
                 <TouchableOpacity onPress={() => setShowStartDatePicker(true)} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:colors.border,backgroundColor:colors.muted,flex:1}}>
@@ -349,7 +350,7 @@ export default function SummaryScreen() {
               </>
             )}
             {Platform.OS === "web" ? (
-              <TextInput value={endDate} onChangeText={setEndDate} placeholder="YYYY-MM-DD" placeholderTextColor={colors.mutedForeground} style={{padding:10,borderRadius:10,borderWidth:1,borderColor:colors.border,fontSize:14,fontFamily:"Inter_400Regular",color:colors.foreground,backgroundColor:colors.muted,flex:1}} />
+              <View style={{ flex: 1 }}><DateField value={endDate} onChange={setEndDate} /></View>
             ) : (
               <>
                 <TouchableOpacity onPress={() => setShowEndDatePicker(true)} style={{padding:12,borderRadius:10,borderWidth:1,borderColor:colors.border,backgroundColor:colors.muted,flex:1}}>

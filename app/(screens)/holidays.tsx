@@ -1,4 +1,5 @@
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
+import DateField from "@/components/DateField";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useCallback } from "react";
 import {
@@ -117,7 +118,7 @@ export default function HolidaysScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
-          <TouchableOpacity style={[s.homeBtn, { marginBottom: 0 }]} onPress={() => router.back()}>
+          <TouchableOpacity style={[s.homeBtn, { marginBottom: 0 }]} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.homeBtnTxt}>Back</Text>
           </TouchableOpacity>
@@ -153,7 +154,7 @@ export default function HolidaysScreen() {
           {/* Start date */}
           <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>{isRange ? "Start Date" : "Select Date"}</Text>
           {Platform.OS === "web" ? (
-            <TextInput value={newDate} onChangeText={setNewDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
+            <DateField value={newDate} onChange={setNewDate} />
           ) : (
             <>
               <TouchableOpacity onPress={() => setShowStartPicker(true)} style={[s.input, {justifyContent:"center"}]}>
@@ -182,7 +183,7 @@ export default function HolidaysScreen() {
             <>
               <Text style={{ fontSize: 12, fontFamily: "Inter_500Medium", color: colors.mutedForeground, marginBottom: 4 }}>End Date</Text>
               {Platform.OS === "web" ? (
-                <TextInput value={newEndDate} onChangeText={setNewEndDate} placeholder="YYYY-MM-DD" style={{padding:10,borderRadius:8,borderWidth:1,borderColor:"#ddd",fontSize:14,fontFamily:"Inter_400Regular"}} />
+                <DateField value={newEndDate} onChange={setNewEndDate} />
               ) : (
                 <>
                   <TouchableOpacity onPress={() => setShowEndPicker(true)} style={[s.input, {justifyContent:"center"}]}>

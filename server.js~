@@ -1,0 +1,107 @@
+const http = require('http');
+const { Pool } = require('pg');
+
+const PORT = process.env.PORT || 3000;
+
+const db = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
+});
+
+function json(res, code, data) {
+  res.writeHead(code, { 
+    'Content-Type': 'application/json',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type'
+  });
+  res.end(JSON.stringify(data));
+}
+
+async function handleApi(method, pathname, req, res) {
+  if (method === 'OPTIONS') {
+    res.writeHead(200, { 
+      'Access-Control-Allow-Origin': '*', 
+      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type'
+    });
+    res.end();
+    return;
+  }
+
+  let body = {};
+  if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
+    const chunks = [];
+    for await (const chunk of req) chunks.push(chunk);
+    try {
+      body = JSON.parse(Buffer.concat(chunks).toString());
+    } catch(e) {}
+  }
+
+  if (method === 'GET' && pathname === '/api/schedules/public') {
+    try {
+      const result = await db.query(`SELECT id, name, 'Admin' as user_id, start_date, end_date FROM schedules WHERE is_public = true ORDER BY created_at DESC`);
+      json(res, 200, result.rows);
+    } catch(e) { 
+      json(res, 200, []); 
+    }
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/student-portal/login') {
+    const { username, password } = body;
+    try {
+      const r = await db.query(`SELECT * FROM student_accounts WHERE username=$1 LIMIT 1`, [username]);
+      if (!r.rows.length) return json(res, 200, { success: false, message: "Username not found" });
+      if (r.rows[0].password!== password) return json(res, 200, { success: false, message: "Incorrect password" });
+      json(res, 200, { 
+        success: true, 
+        studentName: r.rows[0].student_name, 
+        rollNo: r.rows[0].roll_no, 
+        className: r.rows[0].class_name, 
+        scheduleId: r.rows[0].schedule_id 
+      });
+    } catch(e) { 
+      json(res, 500, { error: e.message }); 
+    }
+    return;
+  }
+
+  if (method === 'POST' && pathname === '/api/auth/register') {
+    const { email, password, name } = body;
+    json(res, 200, { success: true, message: "Register endpoint works", received: { email, name } });
+    return;
+  }
+
+  if (pathname === '/health' || pathname === '/ping') {
+    json(res, 200, { status: 'ok', timestamp: new Date().toISOString() });
+    return;
+  }
+
+  json(res, 404, { error: 'Not found' });
+}
+
+const server = http.createServer(async (req, res) => {
+  const { pathname } = new URL(req.url, `http://${req.headers.host}`);
+  
+  if (pathname.startsWith('/api/') || pathname === '/health' || pathname === '/ping') {
+    await handleApi(req.method, pathname, req, res);
+    return; // <- Critical: prevents ERR_HTTP_HEADERS_SENT
+  }
+  
+  json(res, 404, { error: 'Not found' });
+});
+
+db.connect()
+ .then(() => {
+    console.log('✅ Connected to Neon database');
+    server.listen(PORT, '127.0.0.1', () => {
+      console.log(`🚀 Server running on port ${PORT}`);
+    });
+  })
+ .catch(err => {
+    console.error('❌ Database connection failed:', err.message);
+    server.listen(PORT, '127.0.0.1', () => {
+      console.log(`🚀 Server running in MOCK mode on port ${PORT}`);
+    });
+  });

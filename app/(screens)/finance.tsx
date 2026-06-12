@@ -1,4 +1,5 @@
 // @ts-nocheck
+import DateField from "@/components/DateField";
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useEffect, useCallback, useMemo } from "react";
@@ -126,6 +127,14 @@ export default function FinanceScreen() {
 
   // ── Rates modal ────────────────────────────────────────────────────────
   const [showRatesModal, setShowRatesModal] = useState<"student" | "faculty" | "staff" | null>(null);
+  const [showExpensesModal, setShowExpensesModal] = useState(false);
+  const [expRows, setExpRows] = useState<any[]>([]);
+  const [expLoading, setExpLoading] = useState(false);
+  const [expDate, setExpDate] = useState("");
+  const [expHead, setExpHead] = useState("Utilities");
+  const [expDesc, setExpDesc] = useState("");
+  const [expAmt, setExpAmt] = useState("");
+  const [expRemarks, setExpRemarks] = useState("");
   const [rateRows, setRateRows] = useState<RateRow[]>([]);
   const [ratesLoading, setRatesLoading] = useState(false);
   const [savingRates, setSavingRates] = useState(false);
@@ -230,9 +239,9 @@ export default function FinanceScreen() {
       for (const r of rates) rateMap[(r as any).label || r.personId] = String(r.amount);
       setter(persons.map(p => ({
         personId: p.personId, personName: p.personName,
-        amount: String(payMap[p.personName]?.amount ?? rateMap[p.personName] ?? rateMap[p.personId] ?? "0"),
-        paidAmount: String(payMap[p.personName]?.paidAmount ?? "0"),
-        notes: payMap[p.personName]?.notes ?? payMap[p.personName]?.note ?? "",
+        amount: String(payMap[p.personName]?.amount ?? payMap[p.personId]?.amount ?? rateMap[p.personName] ?? rateMap[p.personId] ?? "0"),
+        paidAmount: String(payMap[p.personName]?.paidAmount ?? payMap[p.personId]?.paidAmount ?? "0"),
+        notes: payMap[p.personName]?.notes ?? payMap[p.personName]?.note ?? payMap[p.personId]?.notes ?? payMap[p.personId]?.note ?? "",
         dirty: false,
       })));
     }
@@ -254,14 +263,16 @@ export default function FinanceScreen() {
     await saveFinancePaymentsBulk(dirty.map(r => ({
       personType: type,
       personId: r.personId,
-      personName: r.personName,
+      personName: type === "student" ? r.personId : r.personName,
       scheduleId: type !== "staff" ? (selectedScheduleId ?? null) : null,
       period,
       amount: r.amount,
       paidAmount: r.paidAmount,
+      status: payStatus(r.amount, r.paidAmount),
       notes: r.notes,
     } as unknown as Partial<FinancePayment>)));
     setSaving(false);
+    refetchSummary();
     const setter = type === "student" ? setStudentRows : type === "faculty" ? setFacultyRows : setStaffPayRows;
     await loadPayRows(type, setter, period);
     refetchSummary();
@@ -324,7 +335,7 @@ export default function FinanceScreen() {
     try {
       const schId = selectedScheduleId;
       const [rates, persons] = await Promise.all([
-        fetchFinanceRates(type, schId),
+        fetchFinanceRates(schId, type),
         type === "staff"
           ? fetchSupportStaff().then(s => s.map(st => ({ personId: st.employeeId, personName: st.name })))
           : selectedScheduleId != null
@@ -332,10 +343,10 @@ export default function FinanceScreen() {
             : Promise.resolve([]),
       ]);
       const rateMap: Record<string, string> = {};
-      for (const r of rates) rateMap[r.personId] = r.rate;
+      for (const r of rates) rateMap[(r as any).label ?? (r as any).personId] = String((r as any).amount ?? (r as any).rate ?? "0");
       setRateRows(persons.map(p => ({
         personId: p.personId, personName: p.personName,
-        rate: rateMap[p.personId] ?? "0",
+        rate: rateMap[p.personId] ?? rateMap[p.personName] ?? "0",
         dirty: false,
       })));
     } finally {
@@ -348,13 +359,14 @@ export default function FinanceScreen() {
     if (!dirty.length) { Alert.alert("No Changes", "No rate changes to save."); return; }
     setSavingRates(true);
     const schId = selectedScheduleId;
-    await saveFinanceRatesBulk(dirty.map(r => ({
-      personType: type, personId: r.personId, scheduleId: schId, rate: Number(r.rate),
-    })));
+    await saveFinanceRatesBulk(schId ?? 0, type, dirty.map(r => ({
+      label: r.personId, amount: Number(r.rate) || 0,
+    })), period);
     setSavingRates(false);
     setShowRatesModal(null);
     const setter = type === "student" ? setStudentRows : type === "faculty" ? setFacultyRows : setStaffPayRows;
     await loadPayRows(type, setter, period);
+    refetchSummary();
     Alert.alert("Rates Saved", `${dirty.length} rate(s) updated. Amounts refreshed for this period.`);
   }
 
@@ -659,12 +671,16 @@ export default function FinanceScreen() {
     const totalDue = rows.reduce((sum, r) => sum + Number(r.amount), 0);
     const totalPaid = rows.reduce((sum, r) => sum + Number(r.paidAmount), 0);
     const totalBal = totalDue - totalPaid;
+    const cntPaid = rows.filter(r => payStatus(r.amount, r.paidAmount) === "Paid").length;
+    const cntPartial = rows.filter(r => payStatus(r.amount, r.paidAmount) === "Partial").length;
+    const cntUnpaid = rows.length - cntPaid - cntPartial;
     return (
       <View style={{ flex: 1 }}>
         <View style={{ flexDirection: "row", gap: 10, padding: 10, backgroundColor: "#E0F2F1" }}>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: "#00695C" }}>Total Due</Text>
             <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#00695C" }}>Rs {fmt(totalDue)}</Text>
+            <Text style={{ fontSize: 10.5, fontFamily: "Inter_600SemiBold", color: "#37474F", marginTop: 2 }}>{rows.length} total · <Text style={{ color: "#2E7D32" }}>✓ {cntPaid} paid</Text>{cntPartial > 0 ? <Text style={{ color: "#E65100" }}> · ⚠ {cntPartial} partial</Text> : null} · <Text style={{ color: "#C62828" }}>✗ {cntUnpaid} unpaid</Text></Text>
           </View>
           <View style={{ flex: 1 }}>
             <Text style={{ fontSize: 10, fontFamily: "Inter_400Regular", color: "#2E7D32" }}>Total Paid</Text>
@@ -780,10 +796,65 @@ export default function FinanceScreen() {
   }
 
   // ── Summary tab ────────────────────────────────────────────────────────
+  const EXPENSE_HEADS = ["Utilities", "Maintenance", "Academic Expense", "Marketing", "Miscellaneous"];
+  const EXP_API = "https://" + (process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online") + "/api";
+  const exInp = { flex: 1, borderWidth: 1, borderColor: "#CFD8DC", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12.5, fontFamily: "Inter_400Regular", color: "#263238" } as any;
+  async function loadExpenses() {
+    setExpLoading(true);
+    try { const r = await fetch(EXP_API + "/finance/expenses?period=" + encodeURIComponent(period || "")).then(x => x.json()); setExpRows(Array.isArray(r) ? r : []); }
+    catch { setExpRows([]); }
+    setExpLoading(false);
+  }
+  async function addExpense() {
+    if (!expHead || !(parseFloat(expAmt) > 0)) { showAlert("Please enter the amount in the orange Amount (Rs) box at the top, and select an expense head."); return; }
+    try {
+      const r = await fetch(EXP_API + "/finance/expenses", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scheduleId: selectedScheduleId, date: expDate || null, expenseHead: expHead, description: expDesc, amount: parseFloat(expAmt), remarks: expRemarks }) }).then(x => x.json());
+      if (r.success) { setExpDesc(""); setExpAmt(""); setExpRemarks(""); loadExpenses(); refetchSummary(); } else { showAlert(r.error || "Failed to add expense"); }
+    } catch (e: any) { showAlert("Error: " + e.message); }
+  }
+  async function deleteExpense(id: number) {
+    if (typeof window !== "undefined" && !showConfirm("Delete this expense entry?")) return;
+    try { await fetch(EXP_API + "/finance/expenses/" + id, { method: "DELETE" }); loadExpenses(); refetchSummary(); } catch {}
+  }
+  async function bulkUploadExpenses() {
+    if (typeof window === "undefined" || Platform.OS !== "web") { showAlert("CSV upload is available on the website version."); return; }
+    const input = document.createElement("input");
+    input.type = "file"; input.accept = ".csv,.txt";
+    input.onchange = async (ev: any) => {
+      const file = ev.target.files?.[0]; if (!file) return;
+      try {
+        const text = await file.text();
+        const lines = text.split("\n").map((l: string) => l.replace("\r", "")).filter((l: string) => l.trim());
+        if (lines.length < 2) { showAlert("CSV file is empty"); return; }
+        const headers = lines[0].split(",").map((h: string) => h.trim().replace(/^"|"$/g, ""));
+        const rows = lines.slice(1).map((line: string) => { const vals = line.split(",").map((v: string) => v.trim().replace(/^"|"$/g, "")); const o: Record<string, string> = {}; headers.forEach((h: string, i: number) => { o[h] = vals[i] || ""; }); return o; });
+        const r = await fetch(EXP_API + "/finance/expenses/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rows, scheduleId: selectedScheduleId }) }).then(x => x.json());
+        if (r.inserted >= 0) { showAlert("Expenses uploaded: " + r.inserted + " inserted, " + r.skipped + " skipped"); loadExpenses(); refetchSummary(); }
+        else { showAlert(r.error || "Upload failed"); }
+      } catch (err: any) { showAlert("Upload error: " + err.message); }
+    };
+    input.click();
+  }
+  function downloadExpenseDraft() {
+    if (typeof window === "undefined" || Platform.OS !== "web") { showAlert("Draft download is available on the website version."); return; }
+    const csv = "Date,Expense Head,Description,Amount,Remarks\n" +
+      ",Utilities,Electricity/Gas/Water/Internet,,\n" +
+      ",Maintenance,Building/Equipment Repair,,\n" +
+      ",Academic Expense,Lab/Library/Teaching Material,,\n" +
+      ",Marketing,Advertisement/Admission Promotion,,\n" +
+      ",Miscellaneous,Other Unplanned Expenses,,\n";
+    const blob = new Blob([csv], { type: "text/csv" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = "Expense_Register_Draft.csv";
+    a.click();
+    URL.revokeObjectURL(a.href);
+  }
   function renderSummary() {
     if (summaryLoading) return <ActivityIndicator color="#00695C" style={{ marginTop: 40 }} size="large" />;
     const overall = summary?.overall ?? { totalDue: 0, totalPaid: 0, count: 0, paid: 0, partial: 0, unpaid: 0 };
     const byType = summary?.byType ?? {};
+    const pl = (summary as any)?.pl ?? { income: 0, facultySalary: 0, staffSalary: 0, expenses: 0, profit: 0 };
     const balance = overall.totalDue - overall.totalPaid;
     const catLabels: Record<string, string> = { student: "Students", faculty: "Faculty", staff: "Support Staff" };
     const catColors: Record<string, string> = { student: "#1565C0", faculty: "#6A1B9A", staff: "#00695C" };
@@ -816,6 +887,28 @@ export default function FinanceScreen() {
               </View>
             ))}
           </View>
+        </View>
+        <View style={{ marginHorizontal: 14, backgroundColor: "#fff", borderRadius: 16, padding: 18, marginBottom: 16, borderWidth: 1.5, borderColor: (pl.profit >= 0 ? "#2E7D32" : "#C62828") + "66" }}>
+          <Text style={{ fontSize: 12, fontFamily: "Inter_600SemiBold", color: "#37474F", textTransform: "uppercase", letterSpacing: 0.5, marginBottom: 8 }}>Profit & Loss Statement</Text>
+          {[
+            { label: "Student Fee Income", v: pl.income, c: "#1565C0", sign: "+" },
+            { label: "Faculty Salary", v: pl.facultySalary, c: "#6A1B9A", sign: "-" },
+            { label: "Staff Salary", v: pl.staffSalary, c: "#00695C", sign: "-" },
+            { label: "Other Expenses", v: pl.expenses, c: "#E65100", sign: "-" },
+          ].map(it => (
+            <View key={it.label} style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: 4 }}>
+              <Text style={{ fontSize: 13, fontFamily: "Inter_400Regular", color: "#455A64" }}>{it.sign} {it.label}</Text>
+              <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: it.c }}>Rs {fmt(it.v)}</Text>
+            </View>
+          ))}
+          <View style={{ height: 1, backgroundColor: "#ECEFF1", marginVertical: 8 }} />
+          <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+            <Text style={{ fontSize: 15, fontFamily: "Inter_700Bold", color: "#263238" }}>{pl.profit >= 0 ? "Profit" : "Loss"}</Text>
+            <Text style={{ fontSize: 18, fontFamily: "Inter_700Bold", color: pl.profit >= 0 ? "#2E7D32" : "#C62828" }}>Rs {fmt(Math.abs(pl.profit))}</Text>
+          </View>
+          <TouchableOpacity onPress={() => { setShowExpensesModal(true); loadExpenses(); }} style={{ marginTop: 12, backgroundColor: "#E65100", borderRadius: 10, paddingVertical: 10, alignItems: "center" }}>
+            <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 }}>Manage Other Expenses</Text>
+          </TouchableOpacity>
         </View>
         <View style={s.summaryGrid}>
           {["student", "faculty", "staff"].map(type => {
@@ -928,7 +1021,7 @@ export default function FinanceScreen() {
       <View style={s.container}>
         <View style={s.header}>
           <View style={s.headerRow}>
-            <TouchableOpacity style={s.navBtn} onPress={() => router.back()}>
+            <TouchableOpacity style={s.navBtn} onPress={() => router.replace("/")}>
               <Feather name="chevron-left" size={14} color="#fff" />
               <Text style={s.navBtnTxt}>Home</Text>
             </TouchableOpacity>
@@ -988,7 +1081,7 @@ export default function FinanceScreen() {
     <View style={s.container}>
       <View style={s.header}>
         <View style={s.headerRow}>
-          <TouchableOpacity style={s.navBtn} onPress={() => router.back()}>
+          <TouchableOpacity style={s.navBtn} onPress={() => router.replace("/")}>
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.navBtnTxt}>Home</Text>
           </TouchableOpacity>
@@ -1027,6 +1120,59 @@ export default function FinanceScreen() {
       </View>
 
       {activeTab === "summary" && renderSummary()}
+      <Modal visible={showExpensesModal} transparent animationType="slide" onRequestClose={() => setShowExpensesModal(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", padding: 16 }}>
+            <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 }}>
+              <Text style={{ fontSize: 16, fontFamily: "Inter_700Bold", color: "#263238" }}>Other Expenses · {period}</Text>
+              <TouchableOpacity onPress={() => setShowExpensesModal(false)}><MaterialCommunityIcons name="close" size={22} color="#455A64" /></TouchableOpacity>
+            </View>
+            <View style={{ flexDirection: "row", gap: 6, flexWrap: "wrap", marginBottom: 8 }}>
+              {EXPENSE_HEADS.map(h => (
+                <TouchableOpacity key={h} onPress={() => setExpHead(h)} style={{ paddingVertical: 6, paddingHorizontal: 10, borderRadius: 14, backgroundColor: expHead === h ? "#E65100" : "#FFF3E0" }}>
+                  <Text style={{ fontSize: 11.5, fontFamily: "Inter_600SemiBold", color: expHead === h ? "#fff" : "#E65100" }}>{h}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+            <View style={{ flexDirection: "row", gap: 6, marginBottom: 6 }}>
+              <TextInput placeholder="Amount (Rs) *" value={expAmt} onChangeText={setExpAmt} keyboardType="numeric" style={[exInp, { borderColor: "#E65100", borderWidth: 1.5 }]} placeholderTextColor="#E65100" />
+              <View style={{ flex: 1 }}><DateField value={expDate} onChange={setExpDate} /></View>
+            </View>
+            <View style={{ flexDirection: "row", gap: 6, marginBottom: 8 }}>
+              <TextInput placeholder="Description" value={expDesc} onChangeText={setExpDesc} style={exInp} placeholderTextColor="#90A4AE" />
+              <TextInput placeholder="Remarks" value={expRemarks} onChangeText={setExpRemarks} style={exInp} placeholderTextColor="#90A4AE" />
+            </View>
+            <View style={{ flexDirection: "row", gap: 8, marginBottom: 10 }}>
+              <TouchableOpacity onPress={addExpense} style={{ flex: 1, backgroundColor: "#2E7D32", borderRadius: 10, paddingVertical: 10, alignItems: "center" }}>
+                <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 }}>+ Add Expense</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={bulkUploadExpenses} style={{ flex: 1, backgroundColor: "#1565C0", borderRadius: 10, paddingVertical: 10, alignItems: "center" }}>
+                <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 }}>Upload CSV</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={downloadExpenseDraft} style={{ flex: 1, backgroundColor: "#ECEFF1", borderRadius: 10, paddingVertical: 10, alignItems: "center", borderWidth: 1, borderColor: "#B0BEC5" }}>
+                <Text style={{ color: "#37474F", fontFamily: "Inter_600SemiBold", fontSize: 13 }}>Draft CSV</Text>
+              </TouchableOpacity>
+            </View>
+            {expLoading ? <ActivityIndicator color="#E65100" /> : (
+              <ScrollView style={{ maxHeight: 320 }}>
+                {expRows.length === 0 && <Text style={{ textAlign: "center", color: "#90A4AE", fontFamily: "Inter_400Regular", fontSize: 13, paddingVertical: 16 }}>No expenses recorded for this month</Text>}
+                {expRows.map((ex: any) => (
+                  <View key={ex.id} style={{ flexDirection: "row", alignItems: "center", borderBottomWidth: 1, borderColor: "#ECEFF1", paddingVertical: 8 }}>
+                    <View style={{ flex: 1 }}>
+                      <Text style={{ fontSize: 13, fontFamily: "Inter_600SemiBold", color: "#263238" }}>{ex.expenseHead} · Rs {fmt(ex.amount)}</Text>
+                      <Text style={{ fontSize: 11.5, fontFamily: "Inter_400Regular", color: "#607D8B" }}>{ex.date}{ex.description ? " · " + ex.description : ""}{ex.remarks ? " · " + ex.remarks : ""}</Text>
+                    </View>
+                    <TouchableOpacity onPress={() => deleteExpense(ex.id)} style={{ padding: 6 }}><MaterialCommunityIcons name="trash-can-outline" size={18} color="#C62828" /></TouchableOpacity>
+                  </View>
+                ))}
+                <View style={{ paddingVertical: 10 }}>
+                  <Text style={{ textAlign: "right", fontSize: 14, fontFamily: "Inter_700Bold", color: "#E65100" }}>Month Total: Rs {fmt(expRows.reduce((t: number, ex: any) => t + (ex.amount || 0), 0))}</Text>
+                </View>
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
       {activeTab === "students" && (
         <View style={{ flex: 1 }}>
           {renderRatesBar("student")}
@@ -1158,7 +1304,7 @@ export default function FinanceScreen() {
                           try {
                             await saveFinancePaymentsBulk([{
                               personType: "student",
-                              personName: row.personName,
+                              personName: row.personId,
                               personId: row.personId,
                               scheduleId: selectedScheduleId,
                               period,
@@ -1167,7 +1313,7 @@ export default function FinanceScreen() {
                               status: "Paid",
                               note: row.notes,
                             }]);
-                            await loadPayRows("student", setStudentRows, period);
+                            await loadPayRows("student", setStudentRows, period); refetchSummary();
                           } finally { setSavingRowId(null); }
                         }}>
                         {isSaving ? <ActivityIndicator color="#fff" size="small" /> : <><Feather name="check-circle" size={14} color="#fff" /><Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 13 }}>{isPaid ? "Paid ✓" : "Mark Paid"}</Text></>}
@@ -1181,7 +1327,7 @@ export default function FinanceScreen() {
                           try {
                             await saveFinancePaymentsBulk([{
                               personType: "student",
-                              personName: row.personName,
+                              personName: row.personId,
                               personId: row.personId,
                               scheduleId: selectedScheduleId,
                               period,
@@ -1190,7 +1336,7 @@ export default function FinanceScreen() {
                               status: payStatus(row.amount, row.paidAmount),
                               note: row.notes,
                             }]);
-                            await loadPayRows("student", setStudentRows, period);
+                            await loadPayRows("student", setStudentRows, period); refetchSummary();
                           } finally { setSavingRowId(null); }
                         }}>
                         {isSaving ? <ActivityIndicator color="#fff" size="small" /> : <><Feather name="save" size={14} color="#fff" /><Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 13 }}>Save</Text></>}

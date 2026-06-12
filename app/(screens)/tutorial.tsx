@@ -385,7 +385,7 @@ export default function TutorialScreen() {
       <View style={s.header}>
         <View style={s.headerRow}>
           <View style={{ flexDirection: "row", gap: 8 }}>
-            <TouchableOpacity style={s.pill} onPress={() => router.back()}>
+            <TouchableOpacity style={s.pill} onPress={() => { if ((router as any).canGoBack && (router as any).canGoBack()) { router.back(); } else { router.replace("/"); } }}>
               <Feather name="chevron-left" size={13} color="#fff" />
               <Text style={s.pillTxt}>Back</Text>
             </TouchableOpacity>

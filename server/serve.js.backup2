@@ -454,21 +454,15 @@ async function handleApi(method, pathname, req, res) {
     if (!scheduleId || !personType || !name) return json(res, 400, { error: "required" });
     try {
       if (personType === "faculty") {
-        const wdP = String(body.whatsapp || "").replace(/[^0-9]/g, "");
-        const waP = !wdP ? "" : (wdP.length === 11 && wdP.startsWith("0")) ? "+92" + wdP.slice(1) : wdP.startsWith("92") ? "+" + wdP : (wdP.length === 10 && wdP.startsWith("3")) ? "+92" + wdP : "+" + wdP;
-        await db.query("INSERT INTO public.finance_faculty (schedule_id, name, email, active_from, whatsapp) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (schedule_id, name) DO UPDATE SET active_from=$4, active_to=NULL, email=$3, whatsapp=CASE WHEN $5<>'' THEN $5 ELSE public.finance_faculty.whatsapp END", [scheduleId, name, email||"", activeFrom||null, waP]);
+        await db.query("INSERT INTO public.finance_faculty (schedule_id, name, email, active_from) VALUES ($1,$2,$3,$4) ON CONFLICT (schedule_id, name) DO UPDATE SET active_from=$4, active_to=NULL, email=$3", [scheduleId, name, email||"", activeFrom||null]);
       } else if (personType === "staff") {
         const { designation, salary } = body;
-        const wdP = String(body.whatsapp || "").replace(/[^0-9]/g, "");
-        const waP = !wdP ? "" : (wdP.length === 11 && wdP.startsWith("0")) ? "+92" + wdP.slice(1) : wdP.startsWith("92") ? "+" + wdP : (wdP.length === 10 && wdP.startsWith("3")) ? "+92" + wdP : "+" + wdP;
-        await db.query("INSERT INTO public.support_staff (schedule_id, name, designation, email, active_from, whatsapp) VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT (schedule_id, name) DO UPDATE SET designation=$3, email=$4, whatsapp=CASE WHEN $6<>'' THEN $6 ELSE public.support_staff.whatsapp END", [scheduleId, name, designation||"", email||"", activeFrom||null, waP]);
+        await db.query("INSERT INTO public.support_staff (schedule_id, name, designation, email, active_from) VALUES ($1,$2,$3,$4,$5) ON CONFLICT (schedule_id, name) DO UPDATE SET designation=$3, email=$4", [scheduleId, name, designation||"", email||"", activeFrom||null]);
         if (salary && parseFloat(salary) > 0) {
           await db.query("INSERT INTO public.finance_rates (schedule_id, person_type, person_id, label, rate) VALUES ($1,'staff',$2,$2,$3) ON CONFLICT ON CONSTRAINT finance_rates_person_type_person_id_schedule_id_key DO UPDATE SET rate=$3, label=$2", [scheduleId, name, parseFloat(salary)||0]);
         }
       } else if (personType === "student") {
-        const wdP = String(body.whatsapp || "").replace(/[^0-9]/g, "");
-        const waP = !wdP ? "" : (wdP.length === 11 && wdP.startsWith("0")) ? "+92" + wdP.slice(1) : wdP.startsWith("92") ? "+" + wdP : (wdP.length === 10 && wdP.startsWith("3")) ? "+92" + wdP : "+" + wdP;
-        await db.query("UPDATE public.students SET active_from=$1, active_to=NULL, whatsapp=CASE WHEN $4<>'' THEN $4 ELSE public.students.whatsapp END WHERE schedule_id=$2 AND roll_no=$3", [activeFrom||null, scheduleId, name, waP]);
+        await db.query("UPDATE public.students SET active_from=$1, active_to=NULL WHERE schedule_id=$2 AND roll_no=$3", [activeFrom||null, scheduleId, name]);
       }
       return json(res, 200, { success: true });
     } catch(e) { return json(res, 500, { error: String(e) }); }
@@ -496,39 +490,6 @@ async function handleApi(method, pathname, req, res) {
     if (!Array.isArray(payments)) return json(res, 400, { error: "payments array required" });
     try {
       for (const p of payments) {
-        // ---- Queue payment notification when marked Paid / Partial ----
-        try {
-          const pType = p.personType || p.person_type || "";
-          const pName = p.personName || p.person_name || "";
-          const pSid = parseInt(p.scheduleId ?? p.schedule_id ?? body.scheduleId ?? 0) || 0;
-          const pPeriod = String(p.period || "");
-          const amt = parseFloat(p.amount) || 0;
-          const paidAmt = parseFloat(p.paidAmount ?? p.paid_amount ?? 0) || 0;
-          const st = String(p.status || "").toLowerCase();
-          if ((st === "paid" || st === "partial") && paidAmt > 0 && pName) {
-            let nm = pName, wa = "";
-            if (pType === "student") {
-              const sr = await db.query("SELECT name, COALESCE(whatsapp,'') AS whatsapp FROM public.students WHERE schedule_id=$1 AND roll_no=$2 LIMIT 1", [pSid, pName]);
-              if (sr.rows[0]) { wa = sr.rows[0].whatsapp || ""; nm = sr.rows[0].name || pName; }
-            }
-            else if (pType === "faculty") {
-              const fr = await db.query("SELECT COALESCE(whatsapp,'') AS whatsapp FROM public.finance_faculty WHERE name=$1 AND ($2::int = 0 OR schedule_id=$2) ORDER BY id DESC LIMIT 1", [pName, pSid]);
-              if (fr.rows[0]) wa = fr.rows[0].whatsapp || "";
-            } else if (pType === "staff") {
-              const fr = await db.query("SELECT COALESCE(whatsapp,'') AS whatsapp FROM public.support_staff WHERE name=$1 ORDER BY id DESC LIMIT 1", [pName]);
-              if (fr.rows[0]) wa = fr.rows[0].whatsapp || "";
-            }
-            const msgTxt = pType === "student"
-              ? (st === "paid"
-                ? "Dear " + nm + ", your fee payment of PKR " + paidAmt + " for " + pPeriod + " has been received. Status: PAID. - AcadTrack Finance"
-                : "Dear " + nm + ", your partial fee payment of PKR " + paidAmt + " (of PKR " + amt + ") for " + pPeriod + " has been received. Status: PARTIAL. - AcadTrack Finance")
-              : "Dear " + nm + ", your salary of PKR " + paidAmt + " for " + pPeriod + " has been " + (st === "paid" ? "paid in full" : "partially paid (of PKR " + amt + ")") + ". - AcadTrack Finance";
-            await db.query(
-              "INSERT INTO public.notifications (schedule_id, class_name, roll_no, student_name, whatsapp, date, session_time, message, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') ON CONFLICT (schedule_id, class_name, roll_no, date, session_time) DO NOTHING",
-              [pSid, "_payment_" + pType, pName, nm, wa, pPeriod, "amt-" + paidAmt, msgTxt]
-            );
-          }
-        } catch (eP) { console.log("payment notify error:", String(eP)); }
         await db.query(
           `INSERT INTO public.finance_payments (person_type, person_name, schedule_id, period, amount, paid_amount, status, note)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -541,66 +502,6 @@ async function handleApi(method, pathname, req, res) {
     } catch(e) { return json(res, 500, { error: String(e) }); }
   }
 
-  // GET /api/finance/expenses — list expense register for a month
-  if (method === "GET" && pathname === "/api/finance/expenses") {
-    const sid = reqUrl.searchParams.get("scheduleId");
-    const period = reqUrl.searchParams.get("period");
-    try {
-      const r = await db.query(
-        "SELECT id, schedule_id, to_char(date,'YYYY-MM-DD') AS date, expense_head, description, amount, remarks FROM public.finance_expenses WHERE ($1::int IS NULL OR schedule_id=$1) AND ($2::text IS NULL OR to_char(date,'YYYY-MM')=$2) ORDER BY date DESC, id DESC",
-        [sid ? parseInt(sid) : null, period || null]
-      );
-      return json(res, 200, r.rows.map(e => ({ id: e.id, scheduleId: e.schedule_id, date: e.date, expenseHead: e.expense_head, description: e.description || "", amount: parseFloat(e.amount) || 0, remarks: e.remarks || "" })));
-    } catch (e) { return json(res, 200, []); }
-  }
-
-  // POST /api/finance/expenses — add one expense entry
-  if (method === "POST" && pathname === "/api/finance/expenses") {
-    const { scheduleId, date, expenseHead, description, amount, remarks } = body;
-    if (!expenseHead || !(parseFloat(amount) > 0)) return json(res, 400, { error: "expenseHead and positive amount required" });
-    try {
-      const r = await db.query(
-        "INSERT INTO public.finance_expenses (schedule_id, date, expense_head, description, amount, remarks) VALUES ($1, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6) RETURNING id",
-        [scheduleId ? parseInt(scheduleId) : null, date || null, expenseHead, description || "", parseFloat(amount) || 0, remarks || ""]
-      );
-      return json(res, 200, { success: true, id: r.rows[0].id });
-    } catch (e) { return json(res, 500, { error: String(e) }); }
-  }
-
-  // DELETE /api/finance/expenses/:id
-  if (method === "DELETE" && pathname.match(/^\/api\/finance\/expenses\/\d+$/)) {
-    try {
-      await db.query("DELETE FROM public.finance_expenses WHERE id=$1", [parseInt(pathname.split("/").pop())]);
-      return json(res, 200, { success: true });
-    } catch (e) { return json(res, 500, { error: String(e) }); }
-  }
-
-  // POST /api/finance/expenses/import — bulk from parsed CSV rows
-  if (method === "POST" && pathname === "/api/finance/expenses/import") {
-    const { rows, scheduleId } = body;
-    if (!Array.isArray(rows) || rows.length === 0) return json(res, 400, { error: "rows required" });
-    try {
-      let inserted = 0, skipped = 0;
-      for (const row of rows) {
-        const g = (...names) => { for (const n of names) { for (const k of Object.keys(row)) { if (String(k).trim().toLowerCase() === n) { const v = String(row[k] || "").trim(); if (v) return v; } } } return ""; };
-        const head = g("expense head", "head", "category");
-        const amtS = g("amount", "amt").replace(/[^0-9.]/g, "");
-        const amt = parseFloat(amtS) || 0;
-        if (!head || amt <= 0) { skipped++; continue; }
-        let dt = g("date");
-        const m1 = dt.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
-        if (m1) dt = m1[3] + "-" + m1[2].padStart(2, "0") + "-" + m1[1].padStart(2, "0");
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(dt)) dt = "";
-        await db.query(
-          "INSERT INTO public.finance_expenses (schedule_id, date, expense_head, description, amount, remarks) VALUES ($1, COALESCE($2::date, CURRENT_DATE), $3, $4, $5, $6)",
-          [scheduleId ? parseInt(scheduleId) : null, dt || null, head, g("description", "detail"), amt, g("remarks", "note", "notes")]
-        );
-        inserted++;
-      }
-      return json(res, 200, { success: true, inserted, skipped });
-    } catch (e) { return json(res, 500, { error: String(e) }); }
-  }
-
   if (method === "GET" && pathname === "/api/finance/summary") {
     const username = reqUrl.searchParams.get("username");
     const period = reqUrl.searchParams.get("period");
@@ -609,39 +510,20 @@ async function handleApi(method, pathname, req, res) {
       let r;
       if (username) {
         r = await db.query(
-          "SELECT fp.person_type, CASE WHEN COALESCE(fp.paid_amount,0) >= COALESCE(fp.amount,0) AND COALESCE(fp.amount,0) > 0 THEN 'Paid' WHEN COALESCE(fp.paid_amount,0) > 0 THEN 'Partial' ELSE 'Unpaid' END as status, COUNT(*) as cnt, SUM(fp.amount) as total, SUM(COALESCE(fp.paid_amount,0)) as paidsum FROM public.finance_payments fp JOIN public.schedules s ON fp.schedule_id = s.id WHERE s.user_id=$1 AND fp.period=$2 GROUP BY fp.person_type, 2",
+          "SELECT fp.person_type, fp.status, COUNT(*) as cnt, SUM(fp.amount) as total FROM public.finance_payments fp JOIN public.schedules s ON fp.schedule_id = s.id WHERE s.user_id=$1 AND fp.period=$2 GROUP BY fp.person_type, fp.status",
           [username, period]
         );
       } else {
         r = await db.query(
-          "SELECT person_type, CASE WHEN COALESCE(paid_amount,0) >= COALESCE(amount,0) AND COALESCE(amount,0) > 0 THEN 'Paid' WHEN COALESCE(paid_amount,0) > 0 THEN 'Partial' ELSE 'Unpaid' END as status, COUNT(*) as cnt, SUM(amount) as total, SUM(COALESCE(paid_amount,0)) as paidsum FROM public.finance_payments WHERE period=$1 GROUP BY person_type, 2",
+          "SELECT person_type, status, COUNT(*) as cnt, SUM(amount) as total FROM public.finance_payments WHERE period=$1 GROUP BY person_type, status",
           [period]
         );
       }
       const summary = { student: {}, faculty: {}, staff: {} };
       r.rows.forEach((row) => {
         if (!summary[row.person_type]) summary[row.person_type] = {};
-        summary[row.person_type][row.status] = { count: parseInt(row.cnt), total: parseFloat(row.total)||0, paid: parseFloat(row.paidsum)||0 };
+        summary[row.person_type][row.status] = { count: parseInt(row.cnt), total: parseFloat(row.total)||0 };
       });
-      // Count persons with a set rate but no payment row this period as Unpaid (due = rate)
-      const unpaidQ = username
-        ? await db.query("SELECT fr.person_type, COUNT(*) as cnt, COALESCE(SUM(fr.rate),0) as total FROM public.finance_rates fr JOIN public.schedules s ON fr.schedule_id=s.id WHERE s.user_id=$1 AND NOT EXISTS (SELECT 1 FROM public.finance_payments fp WHERE fp.person_type=fr.person_type AND fp.period=$2 AND (fp.person_name=fr.person_id OR fp.person_name=fr.label)) GROUP BY fr.person_type", [username, period])
-        : await db.query("SELECT fr.person_type, COUNT(*) as cnt, COALESCE(SUM(fr.rate),0) as total FROM public.finance_rates fr WHERE NOT EXISTS (SELECT 1 FROM public.finance_payments fp WHERE fp.person_type=fr.person_type AND fp.period=$1 AND (fp.person_name=fr.person_id OR fp.person_name=fr.label)) GROUP BY fr.person_type", [period]);
-      unpaidQ.rows.forEach(row => {
-        if (!summary[row.person_type]) summary[row.person_type] = {};
-        const ex = summary[row.person_type]["Unpaid"] || { count: 0, total: 0, paid: 0 };
-        summary[row.person_type]["Unpaid"] = { count: ex.count + parseInt(row.cnt), total: (ex.total || 0) + (parseFloat(row.total) || 0), paid: ex.paid || 0 };
-      });
-      const paidQ = username
-        ? await db.query("SELECT fp.person_type, SUM(COALESCE(fp.paid_amount,0)) AS paid FROM public.finance_payments fp LEFT JOIN public.schedules s ON fp.schedule_id=s.id WHERE fp.period=$2 AND (s.user_id=$1 OR fp.schedule_id IS NULL) GROUP BY fp.person_type", [username, period])
-        : await db.query("SELECT person_type, SUM(COALESCE(paid_amount,0)) AS paid FROM public.finance_payments WHERE period=$1 GROUP BY person_type", [period]);
-      const paid = { student: 0, faculty: 0, staff: 0 };
-      paidQ.rows.forEach(rr => { paid[rr.person_type] = parseFloat(rr.paid) || 0; });
-      const expQ = username
-        ? await db.query("SELECT COALESCE(SUM(e.amount),0) AS t FROM public.finance_expenses e LEFT JOIN public.schedules s ON e.schedule_id=s.id WHERE to_char(e.date,'YYYY-MM')=$2 AND (s.user_id=$1 OR e.schedule_id IS NULL)", [username, period])
-        : await db.query("SELECT COALESCE(SUM(amount),0) AS t FROM public.finance_expenses WHERE to_char(date,'YYYY-MM')=$1", [period]);
-      const expTotal = parseFloat(expQ.rows[0].t) || 0;
-      summary.pl = { income: paid.student, facultySalary: paid.faculty, staffSalary: paid.staff, expenses: expTotal, profit: paid.student - (paid.faculty + paid.staff + expTotal) };
       return json(res, 200, summary);
     } catch(e) { return json(res, 200, { student: {}, faculty: {}, staff: {} }); }
   }
@@ -662,13 +544,7 @@ async function handleApi(method, pathname, req, res) {
     try {
       await db.query("DELETE FROM public.finance_rates WHERE schedule_id=$1 AND person_type=$2", [scheduleId, personType]);
       for (const rate of rates) {
-        await db.query("INSERT INTO public.finance_rates (schedule_id, person_type, person_id, label, rate) VALUES ($1,$2,$3,$3,$4)", [scheduleId, personType, String(rate.label || ""), parseFloat(rate.amount)||0]);
-      }
-      const ratePeriod = body.period;
-      if (ratePeriod) {
-        for (const rate of rates) {
-          await db.query("UPDATE public.finance_payments SET amount=$1, status='Unpaid' WHERE person_type=$2 AND period=$3 AND person_name=$4 AND COALESCE(paid_amount,0)=0 AND ($5::int = 0 OR schedule_id=$5)", [parseFloat(rate.amount)||0, personType, ratePeriod, String(rate.label||""), parseInt(scheduleId)||0]);
-        }
+        await db.query("INSERT INTO public.finance_rates (schedule_id, person_type, label, amount) VALUES ($1,$2,$3,$4)", [scheduleId, personType, rate.label, rate.amount||0]);
       }
       return json(res, 200, { success: true });
     } catch(e) { return json(res, 500, { error: String(e) }); }
@@ -882,6 +758,35 @@ async function handleApi(method, pathname, req, res) {
     } catch (e) { return json(res, 500, { error: e.message }); }
   }
 
+  
+
+
+
+  // GET /api/schedule-settings/:scheduleId
+  if (method === "GET" && pathname.match(/^\/api\/schedule-settings\/\d+$/)) {
+    const scheduleId = parseInt(pathname.split('/').pop());
+    try {
+      const result = await db.query(
+        `SELECT id, start_hour as "startHour", end_hour as "endHour", 
+                lecture_mins as "lectureMins", break_time as "breakTime"
+         FROM public.schedules WHERE id = $1`,
+        [scheduleId]
+      );
+      if (result.rows.length === 0) {
+        return json(res, 404, { error: "Schedule not found" });
+      }
+      const settings = result.rows[0];
+      if (settings.breakTime) {
+        const parts = settings.breakTime.split('-');
+        settings.breakStart = parseFloat(parts[0]);
+        settings.breakEnd = parseFloat(parts[1]);
+      }
+      return json(res, 200, settings);
+    } catch(e) {
+      return json(res, 500, { error: String(e) });
+    }
+  }
+
   if (method === "GET" && pathname === "/api/schedules") {
     const username = reqUrl.searchParams.get("username");
     if (!username) return json(res, 400, { success: false, message: "username required" });
@@ -890,37 +795,28 @@ async function handleApi(method, pathname, req, res) {
       return json(res, 200, r.rows.map(s => ({
         id: s.id, userId: s.user_id, name: s.name,
         startDate: s.start_date, endDate: s.end_date,
-        startHour: s.start_hour ?? 9, lectureDuration: s.lecture_duration ?? 60, endHour: s.end_hour ?? 17, activeDays: s.active_days ?? 'Mon,Tue,Wed,Thu,Fri',
+        startHour: s.start_hour ?? 9, endHour: s.end_hour ?? 17, activeDays: s.active_days ?? 'Mon,Tue,Wed,Thu,Fri',
         isPublic: s.is_public, createdAt: s.created_at, breakTime: s.break_time ?? '13-14'
       })));
     } catch (e) { return json(res, 500, { error: e.message }); }
   }
 
   if (method === "POST" && pathname === "/api/schedules") {
-    const { username, name, startDate, endDate, startHour, endHour, activeDays, breakTime, lectureDuration } = body;
+    const { username, name, startDate, endDate, startHour, endHour, activeDays, breakTime } = body;
     if (!username || !name) return json(res, 400, { success: false, message: "username and name required" });
     try {
       const r = await db.query(
-        "INSERT INTO public.schedules (id, user_id, name, start_date, end_date, start_hour, end_hour, active_days, break_time, lecture_duration) VALUES (nextval('public.schedules_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING *",
-        [username, name, startDate ?? null, endDate ?? null, startHour ?? 9, endHour ?? 17, activeDays ?? 'Mon,Tue,Wed,Thu,Fri', breakTime ?? '13-14', parseInt(lectureDuration) || 60]
+        "INSERT INTO public.schedules (id, user_id, name, start_date, end_date, start_hour, end_hour, active_days, break_time) VALUES (nextval('public.schedules_id_seq'), $1, $2, $3, $4, $5, $6, $7, $8) RETURNING *",
+        [username, name, startDate ?? null, endDate ?? null, startHour ?? 9, endHour ?? 17, activeDays ?? 'Mon,Tue,Wed,Thu,Fri', breakTime ?? '13-14']
       );
       const s = r.rows[0];
       return json(res, 200, { success: true, schedule: {
         id: s.id, userId: s.user_id, name: s.name,
         startDate: s.start_date, endDate: s.end_date,
         startHour: s.start_hour ?? 9, endHour: s.end_hour ?? 17, activeDays: s.active_days ?? 'Mon,Tue,Wed,Thu,Fri',
-        lectureDuration: s.lecture_duration ?? 60, isPublic: s.is_public, createdAt: s.created_at
+        isPublic: s.is_public, createdAt: s.created_at
       }});
     } catch (e) { return json(res, 500, { error: e.message }); }
-  }
-
-  if (method === "POST" && pathname.match(/^\/api\/schedules\/\d+\/duration$/)) {
-    const id = parseInt(pathname.split("/")[3]);
-    const { lectureDuration } = body;
-    try {
-      await db.query("UPDATE public.schedules SET lecture_duration = $1 WHERE id = $2", [parseInt(lectureDuration) || 60, id]);
-      return json(res, 200, { success: true });
-    } catch(e) { return json(res, 500, { error: e.message }); }
   }
 
   if (method === "PATCH" && pathname.match(/^\/api\/schedules\/\d+\/settings$/)) {
@@ -1324,9 +1220,7 @@ async function handleApi(method, pathname, req, res) {
           if (timeMatch[3].toUpperCase() === 'AM' && h === 12) h = 0;
           hourNum = h;
         }
-        let minNum = 0;
-        if (timeMatch) minNum = parseInt(timeMatch[2]) || 0;
-        const sortKey = hourNum * 60 + minNum;  // minutes format for grid display
+        const sortKey = hourNum * 60;  // minutes format for grid display
         await db.query(
           "INSERT INTO public.weekly_schedule (faculty, subject, class_name, dept, day, location, time_start, time_end, lec_lab, elective, user_email, sort_key, schedule_id) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)",
           [faculty, subject, className, dept, day, location, timeStart, timeEnd, lecLab, elective, userEmail, sortKey, (scheduleId ? parseInt(scheduleId) : null)]
@@ -1390,43 +1284,14 @@ async function handleApi(method, pathname, req, res) {
     } catch(e) { return json(res, 500, { error: String(e) }); }
   }
 
-  // POST /api/import/students/csv — bulk enroll from parsed CSV rows
-  if (method === "POST" && pathname === "/api/import/students/csv") {
-    const { rows, scheduleId, className } = body;
-    if (!rows || !Array.isArray(rows) || rows.length === 0 || !scheduleId || !className) return json(res, 400, { error: "rows, scheduleId, className required" });
-    try {
-      let inserted = 0, skipped = 0;
-      for (const row of rows) {
-        const g = (...names) => { for (const n of names) { for (const k of Object.keys(row)) { if (String(k).trim().toLowerCase() === n) { const v = String(row[k] || "").trim(); if (v) return v; } } } return ""; };
-        const rollNo = g("reg no", "regno", "roll no", "rollno", "registration no");
-        const name = g("student name", "studentname", "name");
-        const email = g("email", "e-mail", "email (optional)");
-        const waRaw = g("whatsapp", "whatsapp no", "whatsapp number", "phone", "mobile", "contact");
-        const wd = String(waRaw || "").replace(/[^0-9]/g, "");
-        const whatsapp = !wd ? "" : (wd.length === 11 && wd.startsWith("0")) ? "+92" + wd.slice(1) : wd.startsWith("92") ? "+" + wd : (wd.length === 10 && wd.startsWith("3")) ? "+92" + wd : "+" + wd;
-        if (!rollNo || !name) { skipped++; continue; }
-        try {
-          await db.query(
-            "INSERT INTO public.students (schedule_id, class_name, roll_no, name, email, whatsapp, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW())",
-            [parseInt(scheduleId), className, rollNo.toUpperCase(), name, email, whatsapp]
-          );
-          inserted++;
-        } catch (e2) { skipped++; }
-      }
-      return json(res, 200, { success: true, inserted, skipped });
-    } catch (e) { return json(res, 500, { error: e.message }); }
-  }
-
   // POST /api/attendance/students
   if (method === "POST" && pathname === "/api/attendance/students") {
-    const { scheduleId, className, rollNo, name, email, whatsapp } = body;
-    const wd0 = String(whatsapp || "").replace(/[^0-9]/g, "");
-    const waNorm = !wd0 ? "" : (wd0.length === 11 && wd0.startsWith("0")) ? "+92" + wd0.slice(1) : wd0.startsWith("92") ? "+" + wd0 : (wd0.length === 10 && wd0.startsWith("3")) ? "+92" + wd0 : "+" + wd0;
+    const { scheduleId, className, rollNo, name, email } = body;
     if (!scheduleId || !className || !rollNo || !name) return json(res, 400, { error: "scheduleId, className, rollNo, name required" });
     try {
       const r = await db.query(
-        "INSERT INTO public.students (schedule_id, class_name, roll_no, name, email, whatsapp, created_at) VALUES ($1,$2,$3,$4,$5,$6,NOW()) RETURNING id, schedule_id, class_name, roll_no, name, email, created_at",
-        [scheduleId, className, rollNo.toUpperCase(), name, email || "", waNorm]
+        "INSERT INTO public.students (schedule_id, class_name, roll_no, name, email, created_at) VALUES ($1,$2,$3,$4,$5,NOW()) RETURNING id, schedule_id, class_name, roll_no, name, email, created_at",
+        [scheduleId, className, rollNo.toUpperCase(), name, email || ""]
       );
       const s = r.rows[0];
       return json(res, 200, { success: true, student: {
@@ -1451,7 +1316,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/attendance/mark
   if (method === "POST" && pathname === "/api/attendance/mark") {
-    const { scheduleId, className, date, sessionTime, records } = body;
+    const { scheduleId, className, date, sessionTime, durationMinutes, records } = body;
     if (!scheduleId || !className || !date || !records) return json(res, 400, { error: "Missing required fields" });
     try {
       // Check if this session is locked (missed entry exists)
@@ -1462,47 +1327,10 @@ async function handleApi(method, pathname, req, res) {
       if (lockCheck.rows.length > 0) return json(res, 403, { error: "Session locked: class was marked as Missed on this date. Attendance cannot be taken.", locked: true });
       // Check if date is a Gazetted Holiday
       const holidayCheck = await db.query(
-        "SELECT name FROM public.holidays WHERE schedule_id= AND date::date=::date LIMIT 1",
+        "SELECT description FROM public.holidays WHERE schedule_id=$1 AND date::date=$2::date LIMIT 1",
         [body.scheduleId, body.date]
       );
       if (holidayCheck.rows.length > 0) return json(res, 403, { error: "Gazetted Holiday: " + holidayCheck.rows[0].name + ". Attendance cannot be taken on a public holiday.", locked: true });
-      // ---- Queue WhatsApp notifications for Absent / Leave students ----
-      try {
-        const recPairs = Array.isArray(records) ? records.map(rr => [rr.rollNo || rr.roll_no, rr.status]) : Object.entries(records);
-        const dow = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(String(date) + "T00:00:00").getDay()];
-        const meta = await db.query(
-          "SELECT faculty, subject, time_end FROM public.weekly_schedule WHERE schedule_id=$1 AND LOWER(class_name)=LOWER($2) AND LOWER(day)=LOWER($3) AND time_start=$4 AND entry_date IS NULL LIMIT 1",
-          [parseInt(scheduleId), className, dow, sessionTime || ""]
-        );
-        const fac = meta.rows[0] ? meta.rows[0].faculty : "";
-        const subj = meta.rows[0] ? meta.rows[0].subject : "";
-        const tEnd = meta.rows[0] ? meta.rows[0].time_end : "";
-        const flagged = recPairs.filter(p => p[1] === "A" || p[1] === "L");
-        if (flagged.length) {
-          const studs = await db.query(
-            "SELECT roll_no, name, COALESCE(whatsapp,'') AS whatsapp FROM public.students WHERE schedule_id=$1 AND class_name=$2 AND roll_no = ANY($3)",
-            [parseInt(scheduleId), className, flagged.map(p => p[0])]
-          );
-          const byRoll = {}; studs.rows.forEach(s => { byRoll[s.roll_no] = s; });
-          for (const p of flagged) {
-            const s = byRoll[p[0]]; if (!s) continue;
-            const word = p[1] === "A" ? "ABSENT" : "ON LEAVE";
-            const msgTxt = "Dear " + (s.name || p[0]) + ", you have been marked " + word +
-              " for " + (subj || "class") + " (" + className + ") on " + dow + " " + date +
-              (sessionTime ? " at " + sessionTime + (tEnd ? "-" + tEnd : "") : "") +
-              (fac ? " (Faculty: " + fac + ")" : "") + ". - AcadTrack";
-            await db.query(
-              "INSERT INTO public.notifications (schedule_id, class_name, roll_no, student_name, whatsapp, date, session_time, message, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'pending') ON CONFLICT (schedule_id, class_name, roll_no, date, session_time) DO NOTHING",
-              [parseInt(scheduleId), className, p[0], s.name || p[0], s.whatsapp || "", String(date), sessionTime || "", msgTxt]
-            );
-          }
-        }
-        const okRolls = recPairs.filter(p => p[1] !== "A" && p[1] !== "L").map(p => p[0]);
-        if (okRolls.length) await db.query(
-          "DELETE FROM public.notifications WHERE schedule_id=$1 AND class_name=$2 AND date=$3 AND session_time=$4 AND status='pending' AND roll_no = ANY($5)",
-          [parseInt(scheduleId), className, String(date), sessionTime || "", okRolls]
-        );
-      } catch (eN) { console.log("notify queue error:", String(eN)); }
       let saved = 0, failed = 0;
       for (const rec of records) {
         try {
@@ -1517,11 +1345,11 @@ async function handleApi(method, pathname, req, res) {
           }
           if (!studentId) { failed++; continue; }
           await db.query(
-            `INSERT INTO public.attendance (schedule_id, class_name, roll_no, date, session_time, status)
-             VALUES ($1,$2,$3,$4,$5,$6)
-             ON CONFLICT (schedule_id, class_name, roll_no, date, session_time)
-             DO UPDATE SET status=$6`,
-            [scheduleId, className, rec.rollNo || String(studentId), date, sessionTime || "", rec.status]
+            `INSERT INTO public.attendance (schedule_id, class_name, roll_no, date, time, status, duration_minutes)
+             VALUES ($1,$2,$3,$4,$5,$6,$7)
+             ON CONFLICT (schedule_id, class_name, roll_no, date, time)
+             DO UPDATE SET status=$6, duration_minutes=$7`,
+            [scheduleId, className, rec.rollNo || String(studentId), date, sessionTime || "", rec.status, durationMinutes || 60]
           );
           saved++;
         } catch { failed++; }
@@ -1537,12 +1365,12 @@ async function handleApi(method, pathname, req, res) {
     if (!scheduleId || !className) return json(res, 400, { error: "scheduleId and className required" });
     try {
       const r = await db.query(
-        `SELECT a.date, a.session_time, a.status, a.roll_no,
+        `SELECT a.date, a.time, a.status, a.roll_no,
                 COALESCE(s.name, '') as name
          FROM public.attendance a
          LEFT JOIN public.students s ON s.schedule_id=a.schedule_id AND s.class_name=a.class_name AND s.roll_no=a.roll_no
          WHERE a.schedule_id=$1 AND a.class_name=$2
-         ORDER BY a.date, a.session_time, a.roll_no`,
+         ORDER BY a.date, a.time, a.roll_no`,
         [parseInt(scheduleId), className]
       );
       // Also return students list for this class
@@ -1558,7 +1386,7 @@ async function handleApi(method, pathname, req, res) {
         let d;
         try { d = row.date instanceof Date ? row.date.toISOString().slice(0,10) : String(row.date).slice(0,10); }
         catch(e) { d = String(row.date).slice(0,10); }
-        const t = row.session_time || "";
+        const t = row.time || "";
         const slotKey = t ? `${d}|${t}` : d;
         slotKeySet.add(slotKey);
         const rn = row.roll_no || String(row.student_id);
@@ -2302,7 +2130,7 @@ async function handleApi(method, pathname, req, res) {
   if (method === "POST" && pathname === "/api/fix-sortkeys") {
     const { scheduleId } = body;
     try {
-      const result = await db.query(`UPDATE public.weekly_schedule SET sort_key = (CASE WHEN time_start LIKE '12:%PM' THEN 720 WHEN time_start LIKE '%PM' THEN (CAST(split_part(time_start,':',1) AS INT)+12)*60 ELSE CAST(split_part(time_start,':',1) AS INT)*60 END) + COALESCE(NULLIF(regexp_replace(split_part(time_start, ':', 2), '[^0-9]', '', 'g'), '')::int, 0) WHERE schedule_id = $1`, [parseInt(scheduleId)]);
+      const result = await db.query(`UPDATE public.weekly_schedule SET sort_key = (CASE WHEN time_start LIKE '12:%PM' THEN 720 WHEN time_start LIKE '%PM' THEN (CAST(split_part(time_start,':',1) AS INT)+12)*60 ELSE CAST(split_part(time_start,':',1) AS INT)*60 END) WHERE schedule_id = $1`, [parseInt(scheduleId)]);
       return json(res, 200, { success: true, updated: result.rowCount });
     } catch(e) { return json(res, 500, { error: e.message }); }
   }
@@ -2487,19 +2315,6 @@ async function handleApi(method, pathname, req, res) {
     } catch(e) { return json(res, 500, {error:e.message}); }
   }
 
-  // GET /api/notifications — inspect the WhatsApp notification queue
-  if (method === "GET" && pathname === "/api/notifications") {
-    const sid = reqUrl.searchParams.get("scheduleId");
-    const st = reqUrl.searchParams.get("status");
-    try {
-      const r = await db.query(
-        "SELECT id, schedule_id, class_name, roll_no, student_name, whatsapp, date, session_time, message, status, created_at, sent_at FROM public.notifications WHERE ($1::int IS NULL OR schedule_id=$1) AND ($2::text IS NULL OR status=$2) ORDER BY created_at DESC LIMIT 200",
-        [sid ? parseInt(sid) : null, st || null]
-      );
-      return json(res, 200, { success: true, count: r.rows.length, notifications: r.rows });
-    } catch (e) { return json(res, 500, { error: String(e) }); }
-  }
-
   // POST /api/chat — Claude AI chatbot proxy
   if (method === "POST" && pathname === "/api/chat") {
     try {
@@ -2573,9 +2388,9 @@ async function fixSequences() {
       class_name TEXT NOT NULL,
       roll_no TEXT NOT NULL DEFAULT '',
       date DATE NOT NULL,
-      session_time TEXT DEFAULT '',
+      time TEXT DEFAULT '',
       status TEXT NOT NULL DEFAULT 'P',
-      UNIQUE(schedule_id, class_name, roll_no, date, session_time)
+      UNIQUE(schedule_id, class_name, roll_no, date, time)
     )`);
     // Add roll_no column if missing (migration)
     await db.query("ALTER TABLE public.attendance ADD COLUMN IF NOT EXISTS roll_no TEXT NOT NULL DEFAULT ''");
@@ -2639,13 +2454,6 @@ async function fixSequences() {
   try {
     await db.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS finance_pin TEXT DEFAULT ''");
   await db.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS is_locked BOOLEAN DEFAULT FALSE");
-  await db.query("ALTER TABLE public.schedules ADD COLUMN IF NOT EXISTS lecture_duration INTEGER DEFAULT 60");
-  await db.query("ALTER TABLE public.students ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
-  await db.query("CREATE TABLE IF NOT EXISTS public.notifications (id SERIAL PRIMARY KEY, schedule_id INTEGER, class_name TEXT, roll_no TEXT, student_name TEXT, whatsapp TEXT, date TEXT, session_time TEXT, message TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW(), sent_at TIMESTAMP)");
-  await db.query("CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe ON public.notifications (schedule_id, class_name, roll_no, date, session_time)");
-  await db.query("CREATE TABLE IF NOT EXISTS public.finance_expenses (id SERIAL PRIMARY KEY, schedule_id INTEGER, date DATE, expense_head TEXT, description TEXT, amount NUMERIC(12,2) DEFAULT 0, remarks TEXT, created_at TIMESTAMP DEFAULT NOW())");
-  await db.query("ALTER TABLE public.finance_faculty ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
-  await db.query("ALTER TABLE public.support_staff ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
   await db.query("ALTER TABLE public.weekly_schedule ADD COLUMN IF NOT EXISTS remarks TEXT");
   await db.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS expiry_date TIMESTAMP DEFAULT NULL");
   await db.query("ALTER TABLE public.users ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT NOW()");
@@ -2697,8 +2505,12 @@ const server = http.createServer(async (req, res) => {
   serveStaticFile(req, res, filePath);
 });
 
-server.listen(port, "127.0.0.1", async () => {
+server.listen(port, "0.0.0.0", async () => {
   console.log('Server running on port ' + port);
   await fixSequences();
 });
 // roster fix Thu May 21 02:59:54 UTC 2026
+
+    return json(res, 500, { error: String(e) });
+  }
+}
