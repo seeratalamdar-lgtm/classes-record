@@ -1,4 +1,5 @@
 // @ts-nocheck
+import NotifToggle from "@/components/NotifToggle";
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useEffect, useCallback } from "react";
@@ -379,6 +380,7 @@ const img = document.createElement("img");
               <Feather name="home" size={13} color="#fff" />
               <Text style={s.homeBtnTxt}>Home</Text>
             </TouchableOpacity>
+            <NotifToggle />
             <TouchableOpacity style={s.signOutBtn} onPress={handleSignOut}>
               <Feather name="log-out" size={13} color="#fff" />
               <Text style={s.signOutTxt}>Sign Out</Text>

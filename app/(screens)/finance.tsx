@@ -1,4 +1,5 @@
 // @ts-nocheck
+import NotifToggle from "@/components/NotifToggle";
 import DateField from "@/components/DateField";
 import { showAlert, showConfirm, openURL } from "@/utils/crossPlatform";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -1085,6 +1086,7 @@ export default function FinanceScreen() {
             <Feather name="chevron-left" size={14} color="#fff" />
             <Text style={s.navBtnTxt}>Home</Text>
           </TouchableOpacity>
+          <NotifToggle />
           <TouchableOpacity style={s.navBtn} onPress={handleLogout}>
             <Feather name="log-out" size={13} color="#fff" />
             <Text style={s.navBtnTxt}>Logout</Text>

@@ -498,6 +498,8 @@ async function handleApi(method, pathname, req, res) {
       for (const p of payments) {
         // ---- Queue payment notification when marked Paid / Partial ----
         try {
+          const ne2 = await db.query("SELECT value FROM public.app_settings WHERE key='notifications_enabled'");
+          if (ne2.rows[0] && ne2.rows[0].value === 'false') throw { __skip: true };
           const pType = p.personType || p.person_type || "";
           const pName = p.personName || p.person_name || "";
           const pSid = parseInt(p.scheduleId ?? p.schedule_id ?? body.scheduleId ?? 0) || 0;
@@ -1468,6 +1470,8 @@ async function handleApi(method, pathname, req, res) {
       if (holidayCheck.rows.length > 0) return json(res, 403, { error: "Gazetted Holiday: " + holidayCheck.rows[0].name + ". Attendance cannot be taken on a public holiday.", locked: true });
       // ---- Queue WhatsApp notifications for Absent / Leave students ----
       try {
+        const ne = await db.query("SELECT value FROM public.app_settings WHERE key='notifications_enabled'");
+        if (ne.rows[0] && ne.rows[0].value === 'false') throw { __skip: true };
         const recPairs = Array.isArray(records) ? records.map(rr => [rr.rollNo || rr.roll_no, rr.status]) : Object.entries(records);
         const dow = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date(String(date) + "T00:00:00").getDay()];
         const meta = await db.query(
@@ -2505,6 +2509,24 @@ async function handleApi(method, pathname, req, res) {
     } catch (e) { return json(res, 500, { error: String(e) }); }
   }
 
+  // GET /api/settings/notifications — current on/off state
+  if (method === "GET" && pathname === "/api/settings/notifications") {
+    try {
+      const r = await db.query("SELECT value FROM public.app_settings WHERE key='notifications_enabled'");
+      const enabled = r.rows[0] ? r.rows[0].value === 'true' : true;
+      return json(res, 200, { enabled });
+    } catch (e) { return json(res, 200, { enabled: true }); }
+  }
+
+  // POST /api/settings/notifications — flip on/off { enabled: bool }
+  if (method === "POST" && pathname === "/api/settings/notifications") {
+    try {
+      const en = body.enabled ? 'true' : 'false';
+      await db.query("INSERT INTO public.app_settings (key, value) VALUES ('notifications_enabled',$1) ON CONFLICT (key) DO UPDATE SET value=$1", [en]);
+      return json(res, 200, { success: true, enabled: body.enabled === true });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
   // GET /api/notifications — inspect the WhatsApp notification queue
   if (method === "GET" && pathname === "/api/notifications") {
     const sid = reqUrl.searchParams.get("scheduleId");
@@ -2661,6 +2683,8 @@ async function fixSequences() {
   await db.query("ALTER TABLE public.students ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
   await db.query("CREATE TABLE IF NOT EXISTS public.notifications (id SERIAL PRIMARY KEY, schedule_id INTEGER, class_name TEXT, roll_no TEXT, student_name TEXT, whatsapp TEXT, date TEXT, session_time TEXT, message TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW(), sent_at TIMESTAMP)");
   await db.query("CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe ON public.notifications (schedule_id, class_name, roll_no, date, session_time)");
+  await db.query("CREATE TABLE IF NOT EXISTS public.app_settings (key TEXT PRIMARY KEY, value TEXT)");
+  await db.query(`INSERT INTO public.app_settings (key, value) VALUES ('notifications_enabled','true') ON CONFLICT (key) DO NOTHING`);
   await db.query("CREATE TABLE IF NOT EXISTS public.finance_expenses (id SERIAL PRIMARY KEY, schedule_id INTEGER, date DATE, expense_head TEXT, description TEXT, amount NUMERIC(12,2) DEFAULT 0, remarks TEXT, created_at TIMESTAMP DEFAULT NOW())");
   await db.query("ALTER TABLE public.finance_faculty ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
   await db.query("ALTER TABLE public.support_staff ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");

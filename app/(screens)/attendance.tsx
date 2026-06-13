@@ -1,4 +1,5 @@
 // @ts-nocheck
+import NotifToggle from "@/components/NotifToggle";
 import DateField from "@/components/DateField";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import React, { useState, useMemo, useCallback, useRef } from "react";
@@ -807,6 +808,7 @@ export default function AttendanceScreen() {
             <Feather name="home" size={13} color="#fff" />
             <Text style={s.navBtnTxt}>Home</Text>
           </TouchableOpacity>
+          <NotifToggle />
         </View>
         <Text style={s.headerTitle}>Attendance</Text>
         <Text style={s.headerSub}>
