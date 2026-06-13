@@ -2487,6 +2487,24 @@ async function handleApi(method, pathname, req, res) {
     } catch(e) { return json(res, 500, {error:e.message}); }
   }
 
+  // POST /api/notifications/:id/sent — worker marks a message delivered
+  if (method === "POST" && pathname.match(/^\/api\/notifications\/\d+\/sent$/)) {
+    const id = parseInt(pathname.split("/")[3]);
+    try {
+      await db.query("UPDATE public.notifications SET status='sent', sent_at=NOW() WHERE id=$1", [id]);
+      return json(res, 200, { success: true });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
+  // POST /api/notifications/:id/failed — worker marks a permanent failure
+  if (method === "POST" && pathname.match(/^\/api\/notifications\/\d+\/failed$/)) {
+    const id = parseInt(pathname.split("/")[3]);
+    try {
+      await db.query("UPDATE public.notifications SET status='failed', sent_at=NOW() WHERE id=$1", [id]);
+      return json(res, 200, { success: true });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
   // GET /api/notifications — inspect the WhatsApp notification queue
   if (method === "GET" && pathname === "/api/notifications") {
     const sid = reqUrl.searchParams.get("scheduleId");
