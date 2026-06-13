@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { setAuthToken, loadAuthToken } from "@/hooks/useApi";
 
 // ─── Permanent invisible admin ────────────────────────────────────────────
 export const ADMIN_USERNAME = "patoprincipalseecs@gmail.com";
@@ -40,6 +41,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Restore session on app start
   useEffect(() => {
     const timeout = setTimeout(() => setIsLoading(false), 3000);
+    loadAuthToken().catch(() => {});
     AsyncStorage.getItem(STORAGE_KEY).then((raw) => {
       clearTimeout(timeout);
       if (raw) {
@@ -67,6 +69,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         expiryDate: null,
       };
       await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(adminUser));
+      // fetch a real admin token so API requests are authorized once enforcement is on
+      try {
+        const tr = await fetch(`${API_BASE}/auth/admin-token`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username: trimmedUser, secret: trimmedPass }),
+        });
+        const td = await tr.json();
+        if (td && td.token) await setAuthToken(td.token);
+      } catch {}
       setAuthUser(adminUser);
       return { success: true };
     }
@@ -87,6 +98,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           expiryDate: data.expiryDate ?? null,
         };
         await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(userObj));
+        if (data.token) await setAuthToken(data.token);
         setAuthUser(userObj);
         return { success: true };
       }
@@ -105,6 +117,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = async () => {
     await AsyncStorage.removeItem(STORAGE_KEY);
     await AsyncStorage.removeItem("auth_user");
+    await setAuthToken(null);
     setAuthUser(null);
   };
 

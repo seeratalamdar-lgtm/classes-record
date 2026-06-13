@@ -234,6 +234,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== FINANCE DATA ROUTES ==========
 
   if (method === "GET" && pathname === "/api/finance/schedules") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const username = reqUrl.searchParams.get("username");
     try {
       const r = username
@@ -245,6 +246,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/personnel/roster?scheduleId=&type=faculty|staff — merged list with contact fields
   if (method === "GET" && pathname === "/api/personnel/roster") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const sid = parseInt(reqUrl.searchParams.get("scheduleId") || "0");
     const type = reqUrl.searchParams.get("type") || "faculty";
     try {
@@ -268,6 +270,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/personnel/student-update — edit a student by id (roll_no is identity, safe to rename display name)
   if (method === "POST" && pathname === "/api/personnel/student-update") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { id, name, email, whatsapp } = body;
     if (!id) return json(res, 400, { error: "id required" });
     const wd = String(whatsapp || "").replace(/[^0-9]/g, "");
@@ -280,6 +283,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/personnel/update — edit one person's name/email/whatsapp (rename cascades)
   if (method === "POST" && pathname === "/api/personnel/update") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, type, oldName, name, email, whatsapp } = body;
     const sid = parseInt(scheduleId || "0");
     if (!sid || !oldName || !name) return json(res, 400, { error: "scheduleId, oldName, name required" });
@@ -304,6 +308,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/persons") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const personType = reqUrl.searchParams.get("personType");
     if (!scheduleId || !personType) return json(res, 200, []);
@@ -324,6 +329,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/payments") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const personType = reqUrl.searchParams.get("personType");
     const period = reqUrl.searchParams.get("period");
@@ -339,6 +345,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/finance/rates/import - bulk upload rates from CSV/Excel
   if (method === "POST" && pathname === "/api/finance/rates/import") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const personType = reqUrl.searchParams.get("personType");
     try {
@@ -434,6 +441,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/faculty-portal/change-password") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { username, currentPassword, newPassword } = body;
     try {
       const r = await db.query("SELECT id, password FROM public.faculty_accounts WHERE username=$1 LIMIT 1", [username]);
@@ -448,6 +456,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/faculty-access
   if (method === "GET" && pathname === "/api/faculty-access") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId) return json(res, 200, []);
     try {
@@ -465,6 +474,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/faculty-access/generate
   if (method === "POST" && pathname === "/api/faculty-access/generate") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId } = body;
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -496,6 +506,7 @@ async function handleApi(method, pathname, req, res) {
 
   // PATCH /api/faculty-access/:id
   if (method === "PATCH" && pathname.match(/^\/api\/faculty-access\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/").pop());
     const { email, regenerate } = body;
     try {
@@ -513,6 +524,7 @@ async function handleApi(method, pathname, req, res) {
 
   // DELETE /api/faculty-access/:id
   if (method === "DELETE" && pathname.match(/^\/api\/faculty-access\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/").pop());
     try {
       await db.query("DELETE FROM public.faculty_accounts WHERE id=$1", [id]);
@@ -522,6 +534,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/faculty-access/download
   if (method === "GET" && pathname === "/api/faculty-access/download") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -537,6 +550,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/finance/persons") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, personType, name, email, activeFrom } = body;
     if (!scheduleId || !personType || !name) return json(res, 400, { error: "required" });
     try {
@@ -563,6 +577,7 @@ async function handleApi(method, pathname, req, res) {
 
   // PATCH /api/finance/persons/:id/deactivate - remove WEF a month
   if (method === "PATCH" && pathname.match(/^\/api\/finance\/persons\/[^/]+\/deactivate$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const parts = pathname.split("/");
     const personId = parts[4];
     const { personType, scheduleId, activeTo } = body;
@@ -632,6 +647,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/finance/expenses — list expense register for a month
   if (method === "GET" && pathname === "/api/finance/expenses") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const sid = reqUrl.searchParams.get("scheduleId");
     const period = reqUrl.searchParams.get("period");
     try {
@@ -645,6 +661,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/finance/expenses — add one expense entry
   if (method === "POST" && pathname === "/api/finance/expenses") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, date, expenseHead, description, amount, remarks } = body;
     if (!expenseHead || !(parseFloat(amount) > 0)) return json(res, 400, { error: "expenseHead and positive amount required" });
     try {
@@ -658,6 +675,7 @@ async function handleApi(method, pathname, req, res) {
 
   // DELETE /api/finance/expenses/:id
   if (method === "DELETE" && pathname.match(/^\/api\/finance\/expenses\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     try {
       await db.query("DELETE FROM public.finance_expenses WHERE id=$1", [parseInt(pathname.split("/").pop())]);
       return json(res, 200, { success: true });
@@ -666,6 +684,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/finance/expenses/import — bulk from parsed CSV rows
   if (method === "POST" && pathname === "/api/finance/expenses/import") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { rows, scheduleId } = body;
     if (!Array.isArray(rows) || rows.length === 0) return json(res, 400, { error: "rows required" });
     try {
@@ -691,6 +710,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/summary") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const username = reqUrl.searchParams.get("username");
     const period = reqUrl.searchParams.get("period");
     if (!period) return json(res, 200, { student: {}, faculty: {}, staff: {} });
@@ -736,6 +756,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/rates") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const personType = reqUrl.searchParams.get("personType");
     if (!scheduleId || !personType) return json(res, 200, []);
@@ -746,6 +767,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/finance/rates") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, personType, rates } = body;
     if (!scheduleId || !personType || !Array.isArray(rates)) return json(res, 400, { error: "required fields missing" });
     try {
@@ -764,6 +786,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/staff") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId || scheduleId === "undefined" || scheduleId === "[object Object]") return json(res, 200, []);
     try {
@@ -773,6 +796,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/finance/staff") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, name, role, contact } = body;
     if (!scheduleId || !name) return json(res, 400, { error: "scheduleId and name required" });
     try {
@@ -782,6 +806,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "DELETE" && pathname.match(/^\/api\/finance\/staff\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/").pop());
     try {
       await db.query("DELETE FROM public.support_staff WHERE id=$1", [id]);
@@ -790,6 +815,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/finance/student-fee") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const regNo = reqUrl.searchParams.get("regNo");
     if (!regNo) return json(res, 200, null);
     try {
@@ -830,6 +856,18 @@ async function handleApi(method, pathname, req, res) {
       if (u.expiry_date && new Date(u.expiry_date) < new Date()) return json(res, 200, { success: false, message: "Account has expired. Contact admin." });
       return json(res, 200, { success: true, user: u.username, token: signToken({ username: u.username, role: "owner" }) });
     } catch (e) { return json(res, 500, { success: false, message: e.message }); }
+  }
+
+  // POST /api/auth/admin-token — issues an admin token when given the correct admin secret (server-verified)
+  if (method === "POST" && pathname === "/api/auth/admin-token") {
+    const { username, secret } = body;
+    const ADMIN_USER = process.env.ADMIN_USERNAME || "patoprincipalseecs@gmail.com";
+    const ADMIN_SECRET = process.env.ADMIN_PASSWORD || "";
+    if (!ADMIN_SECRET) return json(res, 500, { success: false, message: "Admin auth not configured" });
+    if ((username || "").toLowerCase() !== ADMIN_USER.toLowerCase() || secret !== ADMIN_SECRET) {
+      return json(res, 200, { success: false, message: "Invalid admin credentials" });
+    }
+    return json(res, 200, { success: true, token: signToken({ username: ADMIN_USER, role: "admin" }, 30) });
   }
 
   if (method === "POST" && pathname === "/api/auth/change-password") {
@@ -972,6 +1010,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "GET" && pathname === "/api/schedules") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const username = reqUrl.searchParams.get("username");
     if (!username) return json(res, 400, { success: false, message: "username required" });
     try {
@@ -986,6 +1025,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/schedules") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { username, name, startDate, endDate, startHour, endHour, activeDays, breakTime, lectureDuration } = body;
     if (!username || !name) return json(res, 400, { success: false, message: "username and name required" });
     try {
@@ -1004,6 +1044,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname.match(/^\/api\/schedules\/\d+\/duration$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/")[3]);
     const { lectureDuration } = body;
     try {
@@ -1013,6 +1054,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "PATCH" && pathname.match(/^\/api\/schedules\/\d+\/settings$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/")[3]);
     const { startHour, endHour, activeDays } = body;
     try {
@@ -1025,6 +1067,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "PATCH" && pathname.match(/^\/api\/schedules\/\d+\/public$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/")[3]);
     const { isPublic } = body;
     try {
@@ -1035,6 +1078,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/schedule/entry") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { Faculty, Subject, Class, Dept, Day, Location, Time, EndTime, LecLab, Elective, User, scheduleId, Type, EntryDate, Remarks } = body;
     if (!Faculty || !Subject || !Class || !Day || !Time) return json(res, 400, { error: "Missing required fields" });
     try {
@@ -1074,6 +1118,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "DELETE" && pathname.startsWith("/api/schedule/") && !pathname.startsWith("/api/schedules/")) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/").pop());
     if (!isNaN(id)) {
       try {
@@ -1084,6 +1129,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "DELETE" && pathname.startsWith("/api/schedules/")) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = pathname.split("/")[3];
     try {
       const sid = parseInt(id);
@@ -1106,6 +1152,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== WEEKLY SCHEDULE ROUTE ==========
 
   if (method === "GET" && pathname === "/api/schedule") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     try {
       const sidInt = scheduleId && scheduleId !== "undefined" && scheduleId !== "null" && !isNaN(parseInt(scheduleId)) ? parseInt(scheduleId) : null;
@@ -1134,6 +1181,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== SUMMARY ROUTE ==========
 
   if (method === "GET" && pathname === "/api/summary") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const start = reqUrl.searchParams.get("start");
     const end = reqUrl.searchParams.get("end");
@@ -1263,6 +1311,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== ENTRIES ROUTE ==========
 
   if (method === "POST" && pathname === "/api/entries") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { Faculty, Subject, Class, Date: date, Location, Time, EndTime, Type, User, scheduleId } = body;
     if (!Faculty || !Subject || !Class || !date || !Type) {
       return json(res, 400, { success: false, message: "Missing required fields" });
@@ -1352,6 +1401,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== HOLIDAYS ROUTES ==========
 
   if (method === "GET" && pathname === "/api/holidays") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const sidInt = scheduleId && !isNaN(parseInt(scheduleId)) ? parseInt(scheduleId) : null;
     try {
@@ -1365,6 +1415,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "POST" && pathname === "/api/holidays") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { date, name } = body;
     if (!date || !name) return json(res, 400, { success: false, message: "date and name required" });
     try {
@@ -1375,6 +1426,7 @@ async function handleApi(method, pathname, req, res) {
   }
 
   if (method === "DELETE" && pathname === "/api/holidays") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = reqUrl.searchParams.get("id");
     if (!id) return json(res, 400, { success: false, message: "id required" });
     try {
@@ -1386,6 +1438,7 @@ async function handleApi(method, pathname, req, res) {
   // ========== IMPORT / SAMPLE ROUTES ==========
 
   if (method === "POST" && pathname === "/api/import/schedule") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { rows, scheduleId } = body;
     if (!rows || !Array.isArray(rows) || rows.length === 0) return json(res, 400, { success: false, message: "No rows to import" });
     try {
@@ -1438,6 +1491,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/attendance/students/all - summary grouped by class
   if (method === "GET" && pathname === "/api/attendance/students/all") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -1463,6 +1517,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/attendance/students
   if (method === "GET" && pathname === "/api/attendance/students") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const className = reqUrl.searchParams.get("className");
     if (!scheduleId || !className) return json(res, 400, { error: "scheduleId and className required" });
@@ -1508,6 +1563,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/attendance/students
   if (method === "POST" && pathname === "/api/attendance/students") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, className, rollNo, name, email, whatsapp } = body;
     const wd0 = String(whatsapp || "").replace(/[^0-9]/g, "");
     const waNorm = !wd0 ? "" : (wd0.length === 11 && wd0.startsWith("0")) ? "+92" + wd0.slice(1) : wd0.startsWith("92") ? "+" + wd0 : (wd0.length === 10 && wd0.startsWith("3")) ? "+92" + wd0 : "+" + wd0;
@@ -1531,6 +1587,7 @@ async function handleApi(method, pathname, req, res) {
 
   // DELETE /api/attendance/students/:id
   if (method === "DELETE" && pathname.match(/^\/api\/attendance\/students\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/").pop());
     try {
       await db.query("DELETE FROM public.students WHERE id=$1", [id]);
@@ -1540,6 +1597,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/attendance/mark
   if (method === "POST" && pathname === "/api/attendance/mark") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, className, date, sessionTime, records } = body;
     if (!scheduleId || !className || !date || !records) return json(res, 400, { error: "Missing required fields" });
     try {
@@ -1623,6 +1681,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/attendance/roster
   if (method === "GET" && pathname === "/api/attendance/roster") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const className = reqUrl.searchParams.get("className");
     if (!scheduleId || !className) return json(res, 400, { error: "scheduleId and className required" });
@@ -1679,6 +1738,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/attendance/summary
   if (method === "GET" && pathname === "/api/attendance/summary") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const className = reqUrl.searchParams.get("className");
     if (!scheduleId || !className) return json(res, 400, { error: "scheduleId and className required" });
@@ -2085,6 +2145,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/student-access
   if (method === "GET" && pathname === "/api/student-access") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -2105,6 +2166,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/student-access/generate
   if (method === "POST" && pathname === "/api/student-access/generate") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { scheduleId, className } = body;
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -2246,6 +2308,7 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/student-access/download
   if (method === "GET" && pathname === "/api/student-access/download") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     if (!scheduleId) return json(res, 400, { error: "scheduleId required" });
     try {
@@ -2269,6 +2332,7 @@ async function handleApi(method, pathname, req, res) {
 
   // PATCH /api/student-access/:id
   if (method === "PATCH" && pathname.match(/^\/api\/student-access\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/")[3]);
     const { email, regenerate } = body;
     try {
@@ -2284,6 +2348,7 @@ async function handleApi(method, pathname, req, res) {
 
   // DELETE /api/student-access/:id
   if (method === "DELETE" && pathname.match(/^\/api\/student-access\/\d+$/)) {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const id = parseInt(pathname.split("/")[3]);
     try {
       await db.query("DELETE FROM public.student_accounts WHERE id=$1", [id]);
@@ -2317,8 +2382,10 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/student-portal/attendance
   if (method === "GET" && pathname === "/api/student-portal/attendance") {
+    const __a = authOf(req); if (!__a) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const rollNo = reqUrl.searchParams.get("rollNo");
+    if (__a.role === "student" && __a.rollNo && rollNo && __a.rollNo !== rollNo) return json(res, 403, { error: "Forbidden" });
     const className = reqUrl.searchParams.get("className");
     if (!scheduleId || !rollNo) return json(res, 400, { error: "scheduleId and rollNo required" });
     try {
@@ -2350,10 +2417,12 @@ async function handleApi(method, pathname, req, res) {
 
   // GET /api/student-portal/marks
   if (method === "GET" && pathname === "/api/student-portal/marks") {
+    const __am = authOf(req); if (!__am) return json(res, 401, { error: "Unauthorized" });
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const rollNo = reqUrl.searchParams.get("rollNo");
     const className = reqUrl.searchParams.get("className");
     if (!scheduleId || !rollNo) return json(res, 400, { error: "required" });
+    if (__am.role === "student" && __am.rollNo && rollNo && __am.rollNo !== rollNo) return json(res, 403, { error: "Forbidden" });
     try {
       const r = await db.query(
         `SELECT em.subject, em.class_name, em.quiz_marks, em.quiz_total,
@@ -2380,6 +2449,7 @@ async function handleApi(method, pathname, req, res) {
 
   // POST /api/student-portal/change-password
   if (method === "POST" && pathname === "/api/student-portal/change-password") {
+    if (!authOf(req)) return json(res, 401, { error: "Unauthorized" });
     const { username, currentPassword, newPassword } = body;
     try {
       const r = await db.query("SELECT id, password FROM public.student_accounts WHERE username=$1 LIMIT 1", [username]);
@@ -2631,8 +2701,18 @@ async function handleApi(method, pathname, req, res) {
   // POST /api/chat — Claude AI chatbot proxy
   if (method === "POST" && pathname === "/api/chat") {
     try {
-      const { messages, domain, scheduleId, identity } = body;
+      const { messages, domain, scheduleId } = body;
       if (!messages || !Array.isArray(messages)) return json(res, 400, { error: "messages required" });
+      // Identity comes from the VERIFIED TOKEN, never from the request body (prevents forgery)
+      const __tok = authOf(req);
+      if (!__tok) return json(res, 401, { error: "Unauthorized" });
+      const identity = {
+        username: __tok.username || "",
+        role: __tok.role || "",
+        name: __tok.facultyName || __tok.name || "",
+        rollNo: __tok.rollNo || "",
+        scheduleIds: __tok.scheduleIds || [],
+      };
 
       // Base knowledge base (loaded once, cached)
       if (!global.__KB) { try { global.__KB = require("fs").readFileSync(__dirname + "/chatbot_kb.txt", "utf8"); } catch { global.__KB = ""; } }

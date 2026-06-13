@@ -1,4 +1,25 @@
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
 const API_BASE = `https://${process.env.EXPO_PUBLIC_DOMAIN}/api`;
+
+// ===== Auth token (set at login, attached to every request) =====
+const TOKEN_KEY = "api_token";
+let __authToken: string | null = null;
+export async function setAuthToken(t: string | null) {
+  __authToken = t || null;
+  try { if (t) await AsyncStorage.setItem(TOKEN_KEY, t); else await AsyncStorage.removeItem(TOKEN_KEY); } catch {}
+}
+export async function loadAuthToken(): Promise<string | null> {
+  if (__authToken) return __authToken;
+  try { __authToken = await AsyncStorage.getItem(TOKEN_KEY); } catch { __authToken = null; }
+  return __authToken;
+}
+export function getAuthToken(): string | null { return __authToken; }
+export function authHeaders(extra?: Record<string, string>): Record<string, string> {
+  const h: Record<string, string> = { ...(extra || {}) };
+  if (__authToken) h["Authorization"] = "Bearer " + __authToken;
+  return h;
+}
 
 export interface ScheduleRow {
   id: number;
@@ -107,7 +128,7 @@ export async function fetchSchedule(scheduleId?: number): Promise<ScheduleRow[]>
   // Also fetch dated entries (makeup/missed) so attendance can show them
   if (scheduleId != null) {
     try {
-      const eRes = await fetch(`${API_BASE}/schedule/entries?scheduleId=${scheduleId}`);
+      const eRes = await fetch(`${API_BASE}/schedule/entries?scheduleId=${scheduleId}`, { headers: authHeaders() });
       const entries = await eRes.json();
       if (Array.isArray(entries)) {
         const mappedEntries = entries.map((r: any) => ({
@@ -133,7 +154,7 @@ export async function saveEntry(data: {
 }) {
   const res = await fetch(`${API_BASE}/entries`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   return res.json();
@@ -144,7 +165,7 @@ export async function fetchSummary(start?: string, end?: string, scheduleId?: nu
   if (start) params.set("start", start);
   if (end) params.set("end", end);
   if (scheduleId != null) params.set("scheduleId", String(scheduleId));
-  const res = await fetch(`${API_BASE}/summary?${params}`);
+  const res = await fetch(`${API_BASE}/summary?${params}`, { headers: authHeaders() });
   return res.json();
 }
 
@@ -158,26 +179,26 @@ export async function fetchHolidays(scheduleId?: number) {
 export async function addHoliday(date: string, name: string, scheduleId?: number) {
   const res = await fetch(`${API_BASE}/holidays`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ date, name, scheduleId }),
   });
   return res.json();
 }
 
 export async function deleteHoliday(id: number) {
-  const res = await fetch(`${API_BASE}/holidays?id=${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/holidays?id=${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
 export async function fetchUserSchedules(username: string) {
-  const res = await fetch(`${API_BASE}/schedules?username=${encodeURIComponent(username)}`);
+  const res = await fetch(`${API_BASE}/schedules?username=${encodeURIComponent(username)}`, { headers: authHeaders() });
   return res.json();
 }
 
 export async function updateScheduleSettings(id: number, startHour: number, endHour: number, activeDays: string) {
   const res = await fetch(`${API_BASE}/schedules/${id}/settings`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ startHour, endHour, activeDays }),
   });
   return res.json();
@@ -186,26 +207,26 @@ export async function updateScheduleSettings(id: number, startHour: number, endH
 export async function createUserSchedule(username: string, name: string, startDate?: string, endDate?: string, startHour?: number, endHour?: number, activeDays?: string) {
   const res = await fetch(`${API_BASE}/schedules`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username, name, startDate, endDate, startHour, endHour, activeDays }),
   });
   return res.json();
 }
 
 export async function deleteScheduleRow(id: number) {
-  const res = await fetch(`${API_BASE}/schedule/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/schedule/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
 export async function deleteUserSchedule(id: number) {
-  const res = await fetch(`${API_BASE}/schedules/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/schedules/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
 export async function toggleSchedulePublic(id: number, isPublic: boolean) {
   const res = await fetch(`${API_BASE}/schedules/${id}/public`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ isPublic }),
   });
   return res.json();
@@ -214,7 +235,7 @@ export async function toggleSchedulePublic(id: number, isPublic: boolean) {
 export async function addScheduleEntry(data: { faculty: string; subject: string; className: string; dept: string; day: string; location: string; timeStart: string; timeEnd: string; lecLab: string; elective?: string; userEmail?: string; scheduleId?: number }) {
   const res = await fetch(`${API_BASE}/schedule/entry`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ Faculty: data.faculty, Subject: data.subject, Class: data.className, Dept: data.dept, Day: data.day, Location: data.location, Time: data.timeStart, EndTime: data.timeEnd, LecLab: data.lecLab, Elective: data.elective || "", User: data.userEmail || "", scheduleId: data.scheduleId }),
   });
   return res.json();
@@ -223,7 +244,7 @@ export async function addScheduleEntry(data: { faculty: string; subject: string;
 export async function importSchedule(rows: any[], scheduleId?: number) {
   const res = await fetch(`${API_BASE}/import/schedule`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ rows, scheduleId }),
   });
   return res.json();
@@ -292,19 +313,19 @@ export async function importScheduleExcel(uri: string, name: string, mimeType: s
   const url = scheduleId != null
     ? `${API_BASE}/import/schedule/xlsx?scheduleId=${scheduleId}`
     : `${API_BASE}/import/schedule/xlsx`;
-  const res = await fetch(url, { method: "POST", body: formData });
+  const res = await fetch(url, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
 export async function importOptionsExcel(uri: string, name: string, mimeType: string) {
   const formData = await buildFormData(uri, name, mimeType);
-  const res = await fetch(`${API_BASE}/import/options/xlsx`, { method: "POST", body: formData });
+  const res = await fetch(`${API_BASE}/import/options/xlsx`, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
 export async function importEntriesExcel(uri: string, name: string, mimeType: string) {
   const formData = await buildFormData(uri, name, mimeType);
-  const res = await fetch(`${API_BASE}/import/entries/xlsx`, { method: "POST", body: formData });
+  const res = await fetch(`${API_BASE}/import/entries/xlsx`, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
@@ -335,7 +356,7 @@ export interface StudentAttendanceSummary {
 
 export async function fetchAllStudents(scheduleId: number): Promise<{id:number;className:string;rollNo:string;name:string;email:string;enrolledAt:string;subject:string;faculty:string}[]> {
   try {
-    const res = await fetch(`${API_BASE}/attendance/students/all?scheduleId=${scheduleId}`);
+    const res = await fetch(`${API_BASE}/attendance/students/all?scheduleId=${scheduleId}`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -343,7 +364,7 @@ export async function fetchAllStudents(scheduleId: number): Promise<{id:number;c
 
 export async function fetchStudents(scheduleId: number, className: string): Promise<Student[]> {
   try {
-    const res = await fetch(`${API_BASE}/attendance/students?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`);
+    const res = await fetch(`${API_BASE}/attendance/students?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -352,21 +373,21 @@ export async function fetchStudents(scheduleId: number, className: string): Prom
 export async function addStudent(scheduleId: number, className: string, rollNo: string, name: string, email: string) {
   const res = await fetch(`${API_BASE}/attendance/students`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, className, rollNo, name, email }),
   });
   return res.json();
 }
 
 export async function deleteStudent(id: number) {
-  const res = await fetch(`${API_BASE}/attendance/students/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/attendance/students/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
 export async function markAttendance(scheduleId: number, className: string, date: string, sessionTime: string, records: { studentId: number; status: string }[]) {
   const res = await fetch(`${API_BASE}/attendance/mark`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, className, date, sessionTime, records }),
   });
   return res.json();
@@ -374,7 +395,7 @@ export async function markAttendance(scheduleId: number, className: string, date
 
 export async function fetchRoster(scheduleId: number, className: string) {
   try {
-    const res = await fetch(`${API_BASE}/attendance/roster?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`);
+    const res = await fetch(`${API_BASE}/attendance/roster?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`, { headers: authHeaders() });
     const data = await res.json();
     if (data && data.dates !== undefined) return data;
     if (Array.isArray(data)) return { dates: [], rows: data };
@@ -384,7 +405,7 @@ export async function fetchRoster(scheduleId: number, className: string) {
 
 export async function fetchStudentAttendanceSummary(scheduleId: number, className: string): Promise<StudentAttendanceSummary[]> {
   try {
-    const res = await fetch(`${API_BASE}/attendance/summary?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`);
+    const res = await fetch(`${API_BASE}/attendance/summary?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -406,10 +427,12 @@ export async function facultyLogin(username: string, password: string): Promise<
   try {
     const res = await fetch(`${API_BASE}/faculty-portal/login`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ username, password }),
     });
-    return res.json();
+    const data = await res.json();
+    if (data && data.token) await setAuthToken(data.token);
+    return data;
   } catch { return { success: false, message: "Network error" }; }
 }
 
@@ -417,7 +440,7 @@ export async function changeFacultyPassword(username: string, currentPassword: s
   try {
     const res = await fetch(`${API_BASE}/faculty-portal/change-password`, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: authHeaders({ "Content-Type": "application/json" }),
       body: JSON.stringify({ username, currentPassword, newPassword }),
     });
     return res.json();
@@ -426,7 +449,7 @@ export async function changeFacultyPassword(username: string, currentPassword: s
 
 export async function fetchPublicSchedules() {
   try {
-    const res = await fetch(`${API_BASE}/schedules/public`);
+    const res = await fetch(`${API_BASE}/schedules/public`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -458,16 +481,18 @@ export interface SupportStaff {
 export async function financeLogin(username: string, financePin: string) {
   const res = await fetch(`${API_BASE}/finance/auth/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username, financePin }),
   });
-  return res.json();
+  const data = await res.json();
+  if (data && data.token) await setAuthToken(data.token);
+  return data;
 }
 
 export async function setFinancePin(username: string, password: string, financePin: string) {
   const res = await fetch(`${API_BASE}/finance/auth/set-pin`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username, password, financePin }),
   });
   return res.json();
@@ -486,7 +511,7 @@ export async function fetchFinanceSchedules(username?: string) {
 
 export async function fetchFinancePersons(scheduleId: number, personType: string, period?: string) {
   const p = period ? `&period=${encodeURIComponent(period)}` : "";
-  const res = await fetch(`${API_BASE}/finance/persons?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}${p}`);
+  const res = await fetch(`${API_BASE}/finance/persons?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}${p}`, { headers: authHeaders() });
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
@@ -494,7 +519,7 @@ export async function fetchFinancePersons(scheduleId: number, personType: string
 export async function addFinancePerson(scheduleId: number, personType: string, name: string, email: string, activeFrom: string, designation?: string, salary?: string, whatsapp?: string) {
   const res = await fetch(`${API_BASE}/finance/persons`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, personType, name, email, activeFrom, designation, salary, whatsapp }),
   });
   return res.json();
@@ -503,14 +528,14 @@ export async function addFinancePerson(scheduleId: number, personType: string, n
 export async function deactivateFinancePerson(personId: string, personType: string, scheduleId: number, activeTo: string) {
   const res = await fetch(`${API_BASE}/finance/persons/${personId}/deactivate`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ personType, scheduleId, activeTo }),
   });
   return res.json();
 }
 
 export async function fetchFinancePayments(scheduleId: number, personType: string, period: string) {
-  const res = await fetch(`${API_BASE}/finance/payments?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}&period=${encodeURIComponent(period)}`);
+  const res = await fetch(`${API_BASE}/finance/payments?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}&period=${encodeURIComponent(period)}`, { headers: authHeaders() });
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
@@ -518,14 +543,14 @@ export async function fetchFinancePayments(scheduleId: number, personType: strin
 export async function saveFinancePaymentsBulk(payments: FinancePayment[]) {
   const res = await fetch(`${API_BASE}/finance/payments`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ payments }),
   });
   return res.json();
 }
 
 export async function fetchFinanceSummary(username: string, period: string) {
-  const res = await fetch(`${API_BASE}/finance/summary?period=${encodeURIComponent(period)}&username=${encodeURIComponent(username || "")}`);
+  const res = await fetch(`${API_BASE}/finance/summary?period=${encodeURIComponent(period)}&username=${encodeURIComponent(username || "")}`, { headers: authHeaders() });
   const raw = await res.json();
   // Transform {student:{Paid:{count,total}}} → {overall:{...}, byType:{...}}
   let totalDue = 0, totalPaid = 0, paid = 0, partial = 0, unpaid = 0;
@@ -548,12 +573,12 @@ export async function fetchFinanceSummary(username: string, period: string) {
 }
 
 export async function fetchStudentFeeStatus(regNo: string) {
-  const res = await fetch(`${API_BASE}/finance/student-fee?regNo=${encodeURIComponent(regNo)}`);
+  const res = await fetch(`${API_BASE}/finance/student-fee?regNo=${encodeURIComponent(regNo)}`, { headers: authHeaders() });
   return res.json();
 }
 
 export async function fetchFinanceRates(scheduleId: number, personType: string) {
-  const res = await fetch(`${API_BASE}/finance/rates?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}`);
+  const res = await fetch(`${API_BASE}/finance/rates?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}`, { headers: authHeaders() });
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
@@ -561,7 +586,7 @@ export async function fetchFinanceRates(scheduleId: number, personType: string) 
 export async function saveFinanceRatesBulk(scheduleId: number, personType: string, rates: any[], period?: string) {
   const res = await fetch(`${API_BASE}/finance/rates`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, personType, rates, period }),
   });
   return res.json();
@@ -569,12 +594,12 @@ export async function saveFinanceRatesBulk(scheduleId: number, personType: strin
 
 export async function importRatesExcel(uri: string, name: string, mimeType: string, scheduleId: number, personType: string) {
   const formData = await buildFormData(uri, name, mimeType);
-  const res = await fetch(`${API_BASE}/finance/rates/import?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}`, { method: "POST", body: formData });
+  const res = await fetch(`${API_BASE}/finance/rates/import?scheduleId=${scheduleId}&personType=${encodeURIComponent(personType)}`, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
 export async function fetchSupportStaff(scheduleId: number) {
-  const res = await fetch(`${API_BASE}/finance/staff?scheduleId=${scheduleId}`);
+  const res = await fetch(`${API_BASE}/finance/staff?scheduleId=${scheduleId}`, { headers: authHeaders() });
   const data = await res.json();
   return Array.isArray(data) ? data : [];
 }
@@ -582,20 +607,20 @@ export async function fetchSupportStaff(scheduleId: number) {
 export async function addSupportStaff(scheduleId: number, name: string, role: string, contact: string) {
   const res = await fetch(`${API_BASE}/finance/staff`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, name, role, contact }),
   });
   return res.json();
 }
 
 export async function deleteSupportStaff(id: number) {
-  const res = await fetch(`${API_BASE}/finance/staff/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/finance/staff/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
 export async function importStaffExcel(uri: string, name: string, mimeType: string, scheduleId: number) {
   const formData = await buildFormData(uri, name, mimeType);
-  const res = await fetch(`${API_BASE}/finance/staff/import?scheduleId=${scheduleId}`, { method: "POST", body: formData });
+  const res = await fetch(`${API_BASE}/finance/staff/import?scheduleId=${scheduleId}`, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
@@ -613,7 +638,7 @@ export interface FacultyAccount {
 
 export async function fetchFacultyAccounts(scheduleId: number): Promise<FacultyAccount[]> {
   try {
-    const res = await fetch(`${API_BASE}/faculty-access?scheduleId=${scheduleId}`);
+    const res = await fetch(`${API_BASE}/faculty-access?scheduleId=${scheduleId}`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -622,7 +647,7 @@ export async function fetchFacultyAccounts(scheduleId: number): Promise<FacultyA
 export async function generateFacultyAccounts(scheduleId: number) {
   const res = await fetch(`${API_BASE}/faculty-access/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId }),
   });
   return res.json();
@@ -631,14 +656,14 @@ export async function generateFacultyAccounts(scheduleId: number) {
 export async function updateFacultyAccount(id: number, data: { email?: string; regenerate?: boolean }) {
   const res = await fetch(`${API_BASE}/faculty-access/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   return res.json();
 }
 
 export async function deleteFacultyAccount(id: number) {
-  const res = await fetch(`${API_BASE}/faculty-access/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/faculty-access/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 
@@ -656,7 +681,7 @@ export interface StudentAccount {
 }
 export async function fetchStudentAccounts(scheduleId: number): Promise<StudentAccount[]> {
   try {
-    const res = await fetch(`${API_BASE}/student-access?scheduleId=${scheduleId}`);
+    const res = await fetch(`${API_BASE}/student-access?scheduleId=${scheduleId}`, { headers: authHeaders() });
     const data = await res.json();
     return Array.isArray(data) ? data : [];
   } catch { return []; }
@@ -664,7 +689,7 @@ export async function fetchStudentAccounts(scheduleId: number): Promise<StudentA
 export async function generateStudentAccounts(scheduleId: number, className?: string) {
   const res = await fetch(`${API_BASE}/student-access/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ scheduleId, className }),
   });
   return res.json();
@@ -672,22 +697,24 @@ export async function generateStudentAccounts(scheduleId: number, className?: st
 export async function updateStudentAccount(id: number, data: { email?: string; regenerate?: boolean }) {
   const res = await fetch(`${API_BASE}/student-access/${id}`, {
     method: "PATCH",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify(data),
   });
   return res.json();
 }
 export async function deleteStudentAccount(id: number) {
-  const res = await fetch(`${API_BASE}/student-access/${id}`, { method: "DELETE" });
+  const res = await fetch(`${API_BASE}/student-access/${id}`, { method: "DELETE", headers: authHeaders() });
   return res.json();
 }
 export async function studentPortalLogin(username: string, password: string) {
   const res = await fetch(`${API_BASE}/student-portal/login`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ username, password }),
   });
-  return res.json();
+  const data = await res.json();
+  if (data && data.token) await setAuthToken(data.token);
+  return data;
 }
 
 export async function importStudentsExcel(scheduleId: number, className: string, uri: string, name: string, mimeType: string, file?: File) {
@@ -720,14 +747,14 @@ export async function importStudentsExcel(scheduleId: number, className: string,
       }).filter(r => Object.values(r).some(v => v));
       const res = await fetch(`${API_BASE}/import/students/csv`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({ rows, scheduleId, className })
       });
       return res.json();
     } catch(e: any) { return { success: false, error: e.message }; }
   }
   const formData = await buildFormData(uri, name, mimeType);
-  const res = await fetch(`${API_BASE}/import/students/xlsx?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`, { method: "POST", body: formData });
+  const res = await fetch(`${API_BASE}/import/students/xlsx?scheduleId=${scheduleId}&className=${encodeURIComponent(className)}`, { method: "POST", body: formData, headers: authHeaders() });
   return res.json();
 }
 
@@ -745,7 +772,7 @@ export interface MeetingResult {
 export async function fetchMeeting(date: string, start: string, end: string, faculty?: string[], scheduleId?: number): Promise<MeetingResult> {
   const res = await fetch(`${API_BASE}/meeting`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: authHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({ date, start, end, faculty, scheduleId })
   });
   return res.json();
