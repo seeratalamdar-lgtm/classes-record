@@ -8,6 +8,7 @@ const http = require("http");
 const fs = require("fs");
 const path = require("path");
 const nodemailer = require("nodemailer");
+const crypto = require("crypto");
 
 // Email transporter
 const mailTransporter = nodemailer.createTransport({
@@ -57,6 +58,31 @@ async function sendCredentialEmail({ to, name, username, password, role, schedul
 const { Pool } = require("pg");
 
 const db = new Pool({ connectionString: process.env.DATABASE_URL });
+
+// ===== Auth tokens (HMAC-signed, stateless) =====
+const AUTH_SECRET = process.env.AUTH_SECRET || "dev-insecure-secret-change-me";
+function b64url(buf) { return Buffer.from(buf).toString("base64").replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,""); }
+function signToken(payload, days) {
+  const body = { ...payload, exp: Date.now() + (days || 30) * 24 * 3600 * 1000 };
+  const p = b64url(JSON.stringify(body));
+  const sig = b64url(crypto.createHmac("sha256", AUTH_SECRET).update(p).digest());
+  return p + "." + sig;
+}
+function verifyTokenStr(token) {
+  if (!token || typeof token !== "string" || token.indexOf(".") < 0) return null;
+  const [p, sig] = token.split(".");
+  const expect = b64url(crypto.createHmac("sha256", AUTH_SECRET).update(p).digest());
+  if (sig !== expect) return null;
+  let body; try { body = JSON.parse(Buffer.from(p.replace(/-/g,"+").replace(/_/g,"/"), "base64").toString()); } catch { return null; }
+  if (!body || !body.exp || body.exp < Date.now()) return null;
+  return body;
+}
+// reads Authorization: Bearer <token> from a request, returns payload or null
+function authOf(req) {
+  const h = (req.headers["authorization"] || req.headers["Authorization"] || "");
+  const m = /^Bearer\s+(.+)$/i.exec(String(h));
+  return m ? verifyTokenStr(m[1]) : null;
+}
 
 const STATIC_ROOT = path.resolve(__dirname, "..", "static-build");
 const TEMPLATE_PATH = path.resolve(__dirname, "templates", "landing-page.html");
@@ -201,7 +227,7 @@ async function handleApi(method, pathname, req, res) {
       const user = r.rows[0];
       if (!user.finance_pin || user.finance_pin.trim() === "") return json(res, 200, { success: false, message: "No Finance PIN set. Ask the schedule owner to set a Finance PIN from My Schedules → Finance PIN." });
       if (user.finance_pin.trim() !== financePin.trim()) return json(res, 200, { success: false, message: "Incorrect Finance PIN" });
-      return json(res, 200, { success: true, user: username.trim(), message: "Finance login successful" });
+      return json(res, 200, { success: true, user: username.trim(), message: "Finance login successful", token: signToken({ username: username.trim(), role: "finance" }) });
     } catch(e) { return json(res, 500, { success: false, message: String(e) }); }
   }
 
@@ -402,7 +428,8 @@ async function handleApi(method, pathname, req, res) {
         startDate: a.start_date ? new Date(a.start_date).toISOString() : null,
         endDate: a.end_date ? new Date(a.end_date).toISOString() : null
       }));
-      return json(res, 200, { success: true, sessions });
+      const token = signToken({ role: "faculty", facultyName: account.faculty_name, username: account.username, scheduleIds: sessions.map(x => x.scheduleId) });
+      return json(res, 200, { success: true, sessions, token });
     } catch(e) { return json(res, 500, { success: false, message: String(e) }); }
   }
 
@@ -801,7 +828,7 @@ async function handleApi(method, pathname, req, res) {
       const u = r.rows[0];
       if (u.is_locked) return json(res, 200, { success: false, message: "Account is locked. Contact admin." });
       if (u.expiry_date && new Date(u.expiry_date) < new Date()) return json(res, 200, { success: false, message: "Account has expired. Contact admin." });
-      return json(res, 200, { success: true, user: u.username });
+      return json(res, 200, { success: true, user: u.username, token: signToken({ username: u.username, role: "owner" }) });
     } catch (e) { return json(res, 500, { success: false, message: e.message }); }
   }
 
@@ -2282,7 +2309,8 @@ async function handleApi(method, pathname, req, res) {
         success: true,
         studentName: acc.student_name, rollNo: acc.roll_no,
         className: acc.class_name, scheduleId: acc.schedule_id,
-        scheduleName: acc.schedule_name, username: acc.username
+        scheduleName: acc.schedule_name, username: acc.username,
+        token: signToken({ role: "student", rollNo: acc.roll_no, scheduleId: acc.schedule_id, className: acc.class_name, username: acc.username })
       });
     } catch(e) { return json(res, 500, { error: e.message }); }
   }
