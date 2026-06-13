@@ -2614,9 +2614,22 @@ async function handleApi(method, pathname, req, res) {
       const sid = parseInt(scheduleId || "0") || 0;
       const ident = identity || {};
       let live = "";
+      let ownershipDenied = false;
 
-      // ---- fetch live data per domain ----
+      // ---- OWNERSHIP GATE: owner-scoped domains may only access schedules the user owns ----
+      const ownerScoped = ["my-schedules", "schedule", "schedule-dashboard", "finance", "admin"];
+      if (ownerScoped.includes(dom) && sid) {
+        const reqUser = (ident.username || "").trim();
+        try {
+          const own = await db.query("SELECT user_id FROM public.schedules WHERE id=$1", [sid]);
+          if (!own.rows.length) { ownershipDenied = true; }
+          else if (!reqUser || own.rows[0].user_id !== reqUser) { ownershipDenied = true; }
+        } catch { ownershipDenied = true; }
+      }
+
+      // ---- fetch live data per domain (only if ownership not denied) ----
       try {
+        if (ownershipDenied) { throw { __skip: true }; }
         if ((dom === "my-schedules" || dom === "schedule" || dom === "schedule-dashboard") && sid) {
           const sc = await db.query("SELECT name, start_hour, end_hour, active_days, break_time, lecture_duration, start_date, end_date FROM public.schedules WHERE id=$1", [sid]);
           if (sc.rows[0]) {
@@ -2680,7 +2693,10 @@ async function handleApi(method, pathname, req, res) {
         "finance": "The user is in ACCOUNT & FINANCE (trusted management). Use the live finance data for fees, salaries, payments, P&L, and expenses. You MAY share the full contact directory provided (all faculty and student whatsapp/email) when asked.",
         "admin": "The user is a SUPER ADMIN (full trusted access). Help with ALL areas plus admin topics (users, passwords, locking, expiry, CSV). You MAY share any contact info in the live data — all faculty and student whatsapp/email."
       };
-      const domInstr = domainMap[dom] || domainMap["home"];
+      let domInstr = domainMap[dom] || domainMap["home"];
+      if (ownershipDenied) {
+        domInstr += " IMPORTANT: The requested schedule does NOT belong to this user's account, so NO data has been provided. You must politely refuse to share any details about it and explain they can only access schedules under their own account. Do not invent any data.";
+      }
 
       const sys = "You are the AcadTrack assistant for the schoolcollege.online academic management system. Answer concisely, practically, and in a friendly tone.\n\nCRITICAL RULES:\n1. When LIVE DATA is provided below, ANSWER THE QUESTION DIRECTLY using those exact numbers. Do NOT tell the user to go to another screen, dashboard, or CSV to find information that is already in the live data.\n2. Never say 'I don't have that information' or 'check the Schedule Dashboard' if the answer is computable from the live data provided.\n3. Only give step-by-step navigation when the user EXPLICITLY asks HOW TO DO an action (e.g. 'how do I mark attendance'). For data questions ('how many...', 'what is...'), just state the answer from live data.\n4. If live data is genuinely absent for a specific question, give a brief direct answer from general knowledge, not a screen referral.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
 

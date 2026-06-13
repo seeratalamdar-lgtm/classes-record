@@ -56,3 +56,4 @@ whatsapp-worker/node_modules/
 whatsapp-worker/auth/
 server/ecosystem.config.js
 .env
+ecosystem.config.js

@@ -161,6 +161,18 @@ export default function ChatbotWidget() {
     else if (p.includes("attendance") || p.includes("summary") || p.includes("personnel") || p.includes("exam") || p.includes("holidays") || p.includes("meeting") || p.includes("students") || p.includes("entry")) { domain = "schedule-dashboard"; }
     else if (p.includes("/schedule")) { domain = "schedule-dashboard"; }
     else if (p.includes("my-schedules")) { domain = sid ? "schedule-dashboard" : "my-schedules"; }
+    // resolve the owning username for owner-scoped domains (privacy gate)
+    try {
+      if (typeof localStorage !== "undefined") {
+        if (domain === "finance") {
+          const fu = localStorage.getItem("financeUser");
+          if (fu) identity.username = fu;
+        } else if (domain === "my-schedules" || domain === "schedule" || domain === "schedule-dashboard" || domain === "admin") {
+          const raw = localStorage.getItem("auth_user_v2");
+          if (raw) { try { const u = JSON.parse(raw); if (u && u.username) identity.username = u.username; } catch {} }
+        }
+      }
+    } catch {}
     return { domain, scheduleId: sid, identity };
   }
 
