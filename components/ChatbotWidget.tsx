@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { View, Text, TouchableOpacity, TextInput, ScrollView, StyleSheet, Platform } from "react-native";
 import { Feather } from "@expo/vector-icons";
+import { usePathname, useLocalSearchParams } from "expo-router";
 
 const KB: { keywords: string[]; answer: string }[] = [
   { keywords: ["sign in","login","log in","signin","faculty portal","faculty sign","faculty login","teacher login","teacher sign"],
@@ -132,6 +133,28 @@ const QUICK = [
 
 export default function ChatbotWidget() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+  const params = useLocalSearchParams();
+  function detectContext() {
+    const p = (pathname || "").toLowerCase();
+    let domain = "home", identity: any = {};
+    const sid = (params as any)?.scheduleId || "";
+    if (p.includes("faculty-portal")) {
+      domain = "faculty-portal";
+      try { const s = JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem("facultySession")) || "{}"); if (s.name || s.facultyName || s.username) identity = { name: s.name || s.facultyName || s.username }; } catch {}
+    } else if (p.includes("student-portal")) {
+      domain = "student-portal";
+      try { const s = JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem("STUDENT_PORTAL_SESSION")) || "{}"); if (s.rollNo || s.roll_no || s.username) identity = { rollNo: s.rollNo || s.roll_no || s.username, name: s.name || "" }; } catch {}
+    } else if (p.includes("finance")) { domain = "finance"; }
+    else if (p.includes("admin-panel")) { domain = "admin"; }
+    else if (p.includes("schedule-dashboard")) { domain = "schedule-dashboard"; }
+    else if (p.includes("schedule-generator")) { domain = "my-schedules"; }
+    else if (p.includes("/schedule")) { domain = "schedule"; }
+    else if (p.includes("my-schedules")) { domain = "my-schedules"; }
+    else if (p.includes("attendance") || p.includes("summary") || p.includes("personnel") || p.includes("exam") || p.includes("holidays") || p.includes("meeting") || p.includes("students") || p.includes("entry")) { domain = "schedule-dashboard"; }
+    return { domain, scheduleId: sid, identity };
+  }
+
   const [messages, setMessages] = useState<Message[]>([
     { role: "bot", text: "Hello! 👋 I am your guide for schoolcollege.online.\n\nI can answer questions about:\n• Signing in (Faculty/Student/Admin)\n• Attendance, Marks, Notes\n• Import Day — bulk Missed/Makeup entries\n• All Entries — view, add & delete entries\n• Remarks on Teaching Summary dates\n• Weekend Makeup sessions\n• Gazetted Holidays integration\n• Schedule generation & much more\n\nWhat would you like help with?" }
   ]);
@@ -142,12 +165,29 @@ export default function ChatbotWidget() {
     if (open) setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 100);
   }, [messages, open]);
 
-  function send(text?: string) {
+  const [typing, setTyping] = useState(false);
+  const CHAT_API = "https://" + ((typeof process !== "undefined" && process.env && process.env.EXPO_PUBLIC_DOMAIN) || "schoolcollege.online") + "/api/chat";
+  async function send(text?: string) {
     const msg = (text || input).trim();
-    if (!msg) return;
+    if (!msg || typing) return;
     setInput("");
-    const answer = getAnswer(msg);
-    setMessages(prev => [...prev, { role: "user", text: msg }, { role: "bot", text: answer }]);
+    const history = [...messages, { role: "user" as const, text: msg }];
+    setMessages(prev => [...prev, { role: "user", text: msg }]);
+    setTyping(true);
+    try {
+      const ctx = detectContext();
+      const apiMessages = history.filter(m => m.role === "user" || m.role === "bot").slice(-10).map(m => ({ role: m.role === "bot" ? "assistant" : "user", content: m.text }));
+      const r = await fetch(CHAT_API, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: apiMessages, domain: ctx.domain, scheduleId: ctx.scheduleId, identity: ctx.identity })
+      }).then(x => x.json());
+      const answer = (r && r.content && r.content[0] && r.content[0].text) ? r.content[0].text : getAnswer(msg);
+      setMessages(prev => [...prev, { role: "bot", text: answer }]);
+    } catch {
+      setMessages(prev => [...prev, { role: "bot", text: getAnswer(msg) }]);
+    }
+    setTyping(false);
   }
 
   if (Platform.OS !== "web") return null;
@@ -174,6 +214,11 @@ export default function ChatbotWidget() {
                 </View>
               </View>
             ))}
+            {typing && (
+              <View style={[s.msgRow, s.botRow]}>
+                <View style={[s.bubble, s.botBubble]}><Text style={[s.msgTxt, s.botTxt]}>…</Text></View>
+              </View>
+            )}
             {messages.length === 1 && (
               <View style={{ gap: 6, marginTop: 4 }}>
                 {QUICK.map((q, i) => (

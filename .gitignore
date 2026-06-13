@@ -54,3 +54,5 @@ node_modules/
 # Allow tracking patched react-native files
 whatsapp-worker/node_modules/
 whatsapp-worker/auth/
+server/ecosystem.config.js
+.env

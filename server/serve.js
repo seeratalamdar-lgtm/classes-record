@@ -2603,24 +2603,76 @@ async function handleApi(method, pathname, req, res) {
   // POST /api/chat — Claude AI chatbot proxy
   if (method === "POST" && pathname === "/api/chat") {
     try {
-      const { messages, system } = body;
+      const { messages, domain, scheduleId, identity } = body;
       if (!messages || !Array.isArray(messages)) return json(res, 400, { error: "messages required" });
-      const response = await fetch("https://api.anthropic.com/v1/messages", {
+
+      // Base knowledge base (loaded once, cached)
+      if (!global.__KB) { try { global.__KB = require("fs").readFileSync(__dirname + "/chatbot_kb.txt", "utf8"); } catch { global.__KB = ""; } }
+      const KB = global.__KB;
+
+      const dom = String(domain || "home");
+      const sid = parseInt(scheduleId || "0") || 0;
+      const ident = identity || {};
+      let live = "";
+
+      // ---- fetch live data per domain ----
+      try {
+        if ((dom === "my-schedules" || dom === "schedule" || dom === "schedule-dashboard") && sid) {
+          const sc = await db.query("SELECT name, start_hour, end_hour, active_days, break_time, lecture_duration FROM public.schedules WHERE id=$1", [sid]);
+          if (sc.rows[0]) {
+            const s = sc.rows[0];
+            const fac = await db.query("SELECT DISTINCT faculty FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty!='_locations_' AND (type IS NULL OR type='')", [sid]);
+            const cls = await db.query("SELECT DISTINCT class_name FROM public.weekly_schedule WHERE schedule_id=$1 AND class_name!='_ref_' AND (type IS NULL OR type='')", [sid]);
+            const cnt = await db.query("SELECT COUNT(*) AS c FROM public.weekly_schedule WHERE schedule_id=$1 AND (type IS NULL OR type='')", [sid]);
+            live = "CURRENT SCHEDULE (live data):\n- Name: " + s.name + "\n- Hours: " + s.start_hour + ":00-" + s.end_hour + ":00, " + (s.lecture_duration||60) + " min lectures, break " + (s.break_time||"none") + "\n- Active days: " + (s.active_days||"") + "\n- Faculty (" + fac.rows.length + "): " + fac.rows.map(r=>r.faculty).join(", ") + "\n- Classes (" + cls.rows.length + "): " + cls.rows.map(r=>r.class_name).join(", ") + "\n- Total scheduled slots: " + cnt.rows[0].c;
+          }
+        } else if (dom === "faculty-portal" && ident.name && sid) {
+          const cl = await db.query("SELECT day, time_start, time_end, subject, class_name, location FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty=$2 AND (type IS NULL OR type='') ORDER BY array_position(ARRAY['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], day), time_start", [sid, ident.name]);
+          const today = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
+          const todayCl = cl.rows.filter(r => r.day === today);
+          live = "FACULTY LIVE DATA for " + ident.name + ":\n- Total weekly classes: " + cl.rows.length + "\n- Today (" + today + "): " + (todayCl.length ? todayCl.map(r=>r.subject+" "+r.class_name+" at "+r.time_start+"-"+r.time_end+" ("+r.location+")").join("; ") : "no classes") + "\n- Full week: " + cl.rows.map(r=>r.day+" "+r.time_start+" "+r.subject+" "+r.class_name).join("; ");
+        } else if (dom === "student-portal" && ident.rollNo && sid) {
+          const att = await db.query("SELECT status, COUNT(*) AS c FROM public.attendance WHERE schedule_id=$1 AND roll_no=$2 GROUP BY status", [sid, ident.rollNo]);
+          const fee = await db.query("SELECT period, amount, COALESCE(paid_amount,0) AS paid, status FROM public.finance_payments WHERE schedule_id=$1 AND person_type='student' AND person_name=$2 ORDER BY period DESC LIMIT 6", [sid, ident.rollNo]);
+          const tot = att.rows.reduce((a,r)=>a+parseInt(r.c),0);
+          const pres = att.rows.filter(r=>r.status==='P').reduce((a,r)=>a+parseInt(r.c),0);
+          live = "STUDENT LIVE DATA for " + (ident.name||ident.rollNo) + " (" + ident.rollNo + "):\n- Attendance: " + pres + "/" + tot + " present" + (tot? " ("+Math.round(pres/tot*100)+"%)":"") + "\n- Fees: " + (fee.rows.length ? fee.rows.map(r=>r.period+": paid "+r.paid+"/"+r.amount+" ("+r.status+")").join("; ") : "no records");
+        } else if (dom === "finance" && sid) {
+          const period = (ident.period) || (new Date().toISOString().slice(0,7));
+          const pay = await db.query("SELECT person_type, COUNT(*) AS c, SUM(amount) AS due, SUM(COALESCE(paid_amount,0)) AS paid FROM public.finance_payments WHERE schedule_id=$1 AND period=$2 GROUP BY person_type", [sid, period]);
+          const exp = await db.query("SELECT COALESCE(SUM(amount),0) AS t FROM public.finance_expenses WHERE to_char(date,'YYYY-MM')=$1", [period]);
+          const studPaid = pay.rows.filter(r=>r.person_type==='student').reduce((a,r)=>a+parseFloat(r.paid||0),0);
+          const facPaid = pay.rows.filter(r=>r.person_type==='faculty').reduce((a,r)=>a+parseFloat(r.paid||0),0);
+          const staffPaid = pay.rows.filter(r=>r.person_type==='staff').reduce((a,r)=>a+parseFloat(r.paid||0),0);
+          const expT = parseFloat(exp.rows[0].t)||0;
+          live = "FINANCE LIVE DATA (" + period + "):\n" + pay.rows.map(r=>"- "+r.person_type+": "+r.c+" people, due "+Math.round(r.due||0)+", paid "+Math.round(r.paid||0)).join("\n") + "\n- Other expenses: " + expT + "\n- Profit/Loss: " + (studPaid - (facPaid+staffPaid+expT)) + " (fee income " + studPaid + " minus salaries " + (facPaid+staffPaid) + " minus expenses " + expT + ")";
+        }
+      } catch (eLive) { live = ""; }
+
+      // ---- domain-specific instruction ----
+      const domainMap = {
+        "home": "The user is on the HOME page, not signed in. Act as a friendly TUTORIAL GUIDE. Explain the five sign-in areas (My Schedules for admins, Faculty Sign In, Student Sign In, Account & Finance, Admin Panel) and how to use each. Help them understand what the system does and how to get started.",
+        "my-schedules": "The user is in MY SCHEDULES (admin area). Help with creating/managing schedules, the AI Schedule Generator, lecture durations, weekly schedule, attendance, teaching summary, HR personnel, exam marks, holidays.",
+        "schedule": "The user is viewing a SPECIFIC SCHEDULE. Use the live schedule data to answer questions about its faculty, classes, days, and timetable.",
+        "schedule-dashboard": "The user is on a SCHEDULE DASHBOARD. Help navigate its features (Weekly Schedule, New Entry, Teaching Summary, Attendance, HR Personnel, Exam Marks, Holidays, Meeting Availability) for this specific schedule.",
+        "faculty-portal": "The user is a FACULTY member signed into their portal. Use their live schedule data to answer about their classes, today's timetable, attendance marking, exam marks, and notes. Only discuss THEIR domain.",
+        "student-portal": "The user is a STUDENT signed into their portal. Use their live data to answer about their attendance percentage, fee status, exam marks, notes, and schedule. Only discuss THEIR own records.",
+        "finance": "The user is in ACCOUNT & FINANCE. Use the live finance data to answer about fees, salaries, payments, summaries, profit/loss, and expenses for this schedule and month.",
+        "admin": "The user is a SUPER ADMIN in the Admin Panel. You may help with ALL areas (schedules, faculty, students, finance) PLUS admin-only topics: managing users, passwords, account locking, expiry dates, and the user CSV."
+      };
+      const domInstr = domainMap[dom] || domainMap["home"];
+
+      const sys = "You are the AcadTrack assistant, a helpful guide for the schoolcollege.online academic management system. Answer concisely and practically, in a friendly tone. Base your answers on the knowledge below and any live data provided. If asked about something outside the user's current area, gently guide them. Keep answers short unless detail is requested.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
+
+      const dsMessages = [{ role: "system", content: sys }, ...messages.slice(-10).map(m => ({ role: m.role, content: m.content }))];
+      const response = await fetch("https://api.deepseek.com/chat/completions", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-          "anthropic-version": "2023-06-01"
-        },
-        body: JSON.stringify({
-          model: "claude-haiku-4-5-20251001",
-          max_tokens: 800,
-          system: system || "",
-          messages: messages.slice(-10)
-        })
+        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + (process.env.ANTHROPIC_API_KEY || "") },
+        body: JSON.stringify({ model: "deepseek-chat", max_tokens: 700, messages: dsMessages })
       });
-      const data = await response.json();
-      return json(res, 200, data);
+      const ds = await response.json();
+      const text = (ds.choices && ds.choices[0] && ds.choices[0].message && ds.choices[0].message.content) ? ds.choices[0].message.content : (ds.error ? ("[AI error] " + (ds.error.message || JSON.stringify(ds.error))) : "[no response]");
+      return json(res, 200, { content: [{ type: "text", text }] });
     } catch(e) { return json(res, 500, { error: String(e) }); }
   }
 
