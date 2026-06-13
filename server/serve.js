@@ -2627,6 +2627,11 @@ async function handleApi(method, pathname, req, res) {
         } catch { ownershipDenied = true; }
       }
 
+      // ---- HARD STOP: if ownership denied, refuse deterministically (never let the model answer) ----
+      if (ownershipDenied) {
+        return json(res, 200, { content: [{ type: "text", text: "This schedule is not under your account, so I can't share any of its details. I can only provide information for schedules you own. Please open one of your own schedules and ask again." }] });
+      }
+
       // ---- fetch live data per domain (only if ownership not denied) ----
       try {
         if (ownershipDenied) { throw { __skip: true }; }
@@ -2698,7 +2703,7 @@ async function handleApi(method, pathname, req, res) {
         domInstr += " IMPORTANT: The requested schedule does NOT belong to this user's account, so NO data has been provided. You must politely refuse to share any details about it and explain they can only access schedules under their own account. Do not invent any data.";
       }
 
-      const sys = "You are the AcadTrack assistant for the schoolcollege.online academic management system. Answer concisely, practically, and in a friendly tone.\n\nCRITICAL RULES:\n1. When LIVE DATA is provided below, ANSWER THE QUESTION DIRECTLY using those exact numbers. Do NOT tell the user to go to another screen, dashboard, or CSV to find information that is already in the live data.\n2. Never say 'I don't have that information' or 'check the Schedule Dashboard' if the answer is computable from the live data provided.\n3. Only give step-by-step navigation when the user EXPLICITLY asks HOW TO DO an action (e.g. 'how do I mark attendance'). For data questions ('how many...', 'what is...'), just state the answer from live data.\n4. If live data is genuinely absent for a specific question, give a brief direct answer from general knowledge, not a screen referral.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
+      const sys = "You are the AcadTrack assistant for the schoolcollege.online academic management system. Answer concisely, practically, and in a friendly tone.\n\nCRITICAL RULES:\n1. When LIVE DATA is provided below, ANSWER THE QUESTION DIRECTLY using those exact numbers. Do NOT tell the user to go to another screen, dashboard, or CSV to find information that is already in the live data.\n2. Never say 'I don't have that information' or 'check the Schedule Dashboard' if the answer is computable from the live data provided.\n3. Only give step-by-step navigation when the user EXPLICITLY asks HOW TO DO an action (e.g. 'how do I mark attendance'). For data questions ('how many...', 'what is...'), just state the answer from live data.\n4. STAY ON TOPIC: You ONLY help with the schoolcollege.online / AcadTrack academic management system (schedules, attendance, fees, salaries, faculty, students, marks, notes, reports, and how to use the app). If asked anything unrelated (general knowledge, trivia, math, world facts, coding, etc.), politely decline: say you can only help with the AcadTrack system, and suggest an AcadTrack topic instead. Do NOT answer off-topic questions even if you know the answer.\n5. ACCOUNT PRIVACY: If the context note says the requested schedule does NOT belong to this user's account, your ONLY response is to clearly state that this schedule is not under their account and you can only share information for schedules they own. Use that exact reason — do NOT ask clarifying questions, do NOT say 'I don't have data', do NOT improvise another excuse.\n6. When sharing one person's fee/salary, report only THAT person's amounts, never a combined total of everyone.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
 
       const dsMessages = [{ role: "system", content: sys }, ...messages.slice(-10).map(m => ({ role: m.role, content: m.content }))];
       const response = await fetch("https://api.deepseek.com/chat/completions", {
