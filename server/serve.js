@@ -2618,25 +2618,35 @@ async function handleApi(method, pathname, req, res) {
       // ---- fetch live data per domain ----
       try {
         if ((dom === "my-schedules" || dom === "schedule" || dom === "schedule-dashboard") && sid) {
-          const sc = await db.query("SELECT name, start_hour, end_hour, active_days, break_time, lecture_duration FROM public.schedules WHERE id=$1", [sid]);
+          const sc = await db.query("SELECT name, start_hour, end_hour, active_days, break_time, lecture_duration, start_date, end_date FROM public.schedules WHERE id=$1", [sid]);
           if (sc.rows[0]) {
             const s = sc.rows[0];
             const fac = await db.query("SELECT DISTINCT faculty FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty!='_locations_' AND (type IS NULL OR type='')", [sid]);
             const cls = await db.query("SELECT DISTINCT class_name FROM public.weekly_schedule WHERE schedule_id=$1 AND class_name!='_ref_' AND (type IS NULL OR type='')", [sid]);
             const cnt = await db.query("SELECT COUNT(*) AS c FROM public.weekly_schedule WHERE schedule_id=$1 AND (type IS NULL OR type='')", [sid]);
-            live = "CURRENT SCHEDULE (live data):\n- Name: " + s.name + "\n- Hours: " + s.start_hour + ":00-" + s.end_hour + ":00, " + (s.lecture_duration||60) + " min lectures, break " + (s.break_time||"none") + "\n- Active days: " + (s.active_days||"") + "\n- Faculty (" + fac.rows.length + "): " + fac.rows.map(r=>r.faculty).join(", ") + "\n- Classes (" + cls.rows.length + "): " + cls.rows.map(r=>r.class_name).join(", ") + "\n- Total scheduled slots: " + cnt.rows[0].c;
+            const labc = await db.query("SELECT COUNT(*) AS lab_slots, COUNT(DISTINCT (subject||class_name||day)) AS lab_sessions FROM public.weekly_schedule WHERE schedule_id=$1 AND lec_lab ILIKE '%lab%' AND (type IS NULL OR type='')", [sid]);
+            const lecc = await db.query("SELECT COUNT(*) AS c FROM public.weekly_schedule WHERE schedule_id=$1 AND (lec_lab IS NULL OR lec_lab NOT ILIKE '%lab%') AND (type IS NULL OR type='')", [sid]);
+            let weeks = "";
+            if (s.start_date && s.end_date) { const ms = new Date(s.end_date) - new Date(s.start_date); const w = Math.round(ms / (7*24*3600*1000)); if (w>0) weeks = "\n- Semester length: ~" + w + " weeks (" + new Date(s.start_date).toISOString().slice(0,10) + " to " + new Date(s.end_date).toISOString().slice(0,10) + ")"; }
+            live = "CURRENT SCHEDULE (live data) — answer questions using THESE exact numbers:\n- Name: " + s.name + "\n- Hours: " + s.start_hour + ":00-" + s.end_hour + ":00, " + (s.lecture_duration||60) + " min lectures, break " + (s.break_time||"none") + "\n- Active days: " + (s.active_days||"") + weeks + "\n- Faculty (" + fac.rows.length + "): " + fac.rows.map(r=>r.faculty).join(", ") + "\n- Classes (" + cls.rows.length + "): " + cls.rows.map(r=>r.class_name).join(", ") + "\n- Lecture slots/week: " + lecc.rows[0].c + "\n- Lab slots/week: " + labc.rows[0].lab_slots + " (across " + labc.rows[0].lab_sessions + " distinct lab sessions)\n- Total scheduled slots/week: " + cnt.rows[0].c;
           }
         } else if (dom === "faculty-portal" && ident.name && sid) {
           const cl = await db.query("SELECT day, time_start, time_end, subject, class_name, location FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty=$2 AND (type IS NULL OR type='') ORDER BY array_position(ARRAY['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], day), time_start", [sid, ident.name]);
           const today = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"][new Date().getDay()];
           const todayCl = cl.rows.filter(r => r.day === today);
-          live = "FACULTY LIVE DATA for " + ident.name + ":\n- Total weekly classes: " + cl.rows.length + "\n- Today (" + today + "): " + (todayCl.length ? todayCl.map(r=>r.subject+" "+r.class_name+" at "+r.time_start+"-"+r.time_end+" ("+r.location+")").join("; ") : "no classes") + "\n- Full week: " + cl.rows.map(r=>r.day+" "+r.time_start+" "+r.subject+" "+r.class_name).join("; ");
+          // faculty's OWN students (in classes they teach) with whatsapp + marks
+          const myStu = await db.query("SELECT DISTINCT s.roll_no, s.name, COALESCE(s.whatsapp,'') AS wa, COALESCE(s.email,'') AS email, s.class_name FROM public.students s WHERE s.schedule_id=$1 AND s.class_name IN (SELECT DISTINCT class_name FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty=$2 AND (type IS NULL OR type='')) ORDER BY s.class_name, s.roll_no", [sid, ident.name]);
+          const marks = await db.query("SELECT em.roll_no, em.marks, em.total_marks FROM public.exam_marks em WHERE em.roll_no IN (SELECT roll_no FROM public.students WHERE schedule_id=$1 AND class_name IN (SELECT DISTINCT class_name FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty=$2 AND (type IS NULL OR type='')))", [sid, ident.name]);
+          const markMap = {}; marks.rows.forEach(m => { markMap[m.roll_no] = m.marks + "/" + m.total_marks; });
+          live = "FACULTY LIVE DATA for " + ident.name + ":\n- Total weekly classes: " + cl.rows.length + "\n- Today (" + today + "): " + (todayCl.length ? todayCl.map(r=>r.subject+" "+r.class_name+" at "+r.time_start+"-"+r.time_end+" ("+r.location+")").join("; ") : "no classes") + "\n- Full week: " + cl.rows.map(r=>r.day+" "+r.time_start+" "+r.subject+" "+r.class_name).join("; ") + "\n\nYOUR STUDENTS (only students in YOUR classes — you may share THEIR whatsapp/marks, but NOT other faculty's students or other faculty's contacts):\n" + myStu.rows.map(s=>s.roll_no+" "+s.name+" ["+s.class_name+"] wa:"+(s.wa||"none")+" marks:"+(markMap[s.roll_no]||"n/a")).join("\n");
         } else if (dom === "student-portal" && ident.rollNo && sid) {
           const att = await db.query("SELECT status, COUNT(*) AS c FROM public.attendance WHERE schedule_id=$1 AND roll_no=$2 GROUP BY status", [sid, ident.rollNo]);
           const fee = await db.query("SELECT period, amount, COALESCE(paid_amount,0) AS paid, status FROM public.finance_payments WHERE schedule_id=$1 AND person_type='student' AND person_name=$2 ORDER BY period DESC LIMIT 6", [sid, ident.rollNo]);
           const tot = att.rows.reduce((a,r)=>a+parseInt(r.c),0);
           const pres = att.rows.filter(r=>r.status==='P').reduce((a,r)=>a+parseInt(r.c),0);
-          live = "STUDENT LIVE DATA for " + (ident.name||ident.rollNo) + " (" + ident.rollNo + "):\n- Attendance: " + pres + "/" + tot + " present" + (tot? " ("+Math.round(pres/tot*100)+"%)":"") + "\n- Fees: " + (fee.rows.length ? fee.rows.map(r=>r.period+": paid "+r.paid+"/"+r.amount+" ("+r.status+")").join("; ") : "no records");
+          const meRow = await db.query("SELECT COALESCE(whatsapp,'') AS wa, COALESCE(email,'') AS email FROM public.students WHERE schedule_id=$1 AND roll_no=$2 LIMIT 1", [sid, ident.rollNo]);
+          const me = meRow.rows[0] || { wa: "", email: "" };
+          live = "STUDENT LIVE DATA for " + (ident.name||ident.rollNo) + " (" + ident.rollNo + "):\n- Attendance: " + pres + "/" + tot + " present" + (tot? " ("+Math.round(pres/tot*100)+"%)":"") + "\n- Fees: " + (fee.rows.length ? fee.rows.map(r=>r.period+": paid "+r.paid+"/"+r.amount+" ("+r.status+")").join("; ") : "no records") + "\n- YOUR OWN contact on file: whatsapp " + (me.wa||"none") + ", email " + (me.email||"none") + "\n(You may ONLY see your OWN contact info. You cannot see other students' or faculty's whatsapp/email/marks.)";
         } else if (dom === "finance" && sid) {
           const period = (ident.period) || (new Date().toISOString().slice(0,7));
           const pay = await db.query("SELECT person_type, COUNT(*) AS c, SUM(amount) AS due, SUM(COALESCE(paid_amount,0)) AS paid FROM public.finance_payments WHERE schedule_id=$1 AND period=$2 GROUP BY person_type", [sid, period]);
@@ -2646,6 +2656,16 @@ async function handleApi(method, pathname, req, res) {
           const staffPaid = pay.rows.filter(r=>r.person_type==='staff').reduce((a,r)=>a+parseFloat(r.paid||0),0);
           const expT = parseFloat(exp.rows[0].t)||0;
           live = "FINANCE LIVE DATA (" + period + "):\n" + pay.rows.map(r=>"- "+r.person_type+": "+r.c+" people, due "+Math.round(r.due||0)+", paid "+Math.round(r.paid||0)).join("\n") + "\n- Other expenses: " + expT + "\n- Profit/Loss: " + (studPaid - (facPaid+staffPaid+expT)) + " (fee income " + studPaid + " minus salaries " + (facPaid+staffPaid) + " minus expenses " + expT + ")";
+          // full contact directory for finance
+          const fc = await db.query("SELECT name, COALESCE(whatsapp,'') AS wa, COALESCE(email,'') AS email FROM public.finance_faculty WHERE schedule_id=$1", [sid]);
+          const sc2 = await db.query("SELECT roll_no, name, COALESCE(whatsapp,'') AS wa, COALESCE(email,'') AS email, class_name FROM public.students WHERE schedule_id=$1 ORDER BY class_name, roll_no", [sid]);
+          live += "\n\nCONTACT DIRECTORY (Finance may share all):\nFACULTY: " + (fc.rows.length ? fc.rows.map(r=>r.name+" wa:"+(r.wa||"none")+" email:"+(r.email||"none")).join("; ") : "none on file") + "\nSTUDENTS: " + sc2.rows.map(r=>r.roll_no+" "+r.name+" ["+r.class_name+"] wa:"+(r.wa||"none")+" email:"+(r.email||"none")).join("; ");
+        } else if (dom === "admin" && sid) {
+          // admin: full directory + schedule overview
+          const fc = await db.query("SELECT name, COALESCE(whatsapp,'') AS wa, COALESCE(email,'') AS email FROM public.finance_faculty WHERE schedule_id=$1", [sid]);
+          const sf = await db.query("SELECT DISTINCT faculty FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty!='_locations_' AND (type IS NULL OR type='')", [sid]);
+          const sc2 = await db.query("SELECT roll_no, name, COALESCE(whatsapp,'') AS wa, COALESCE(email,'') AS email, class_name FROM public.students WHERE schedule_id=$1 ORDER BY class_name, roll_no", [sid]);
+          live = "ADMIN LIVE DATA (full access):\nFACULTY (" + sf.rows.length + "): " + sf.rows.map(r=>r.faculty).join(", ") + "\nFACULTY CONTACTS: " + (fc.rows.length ? fc.rows.map(r=>r.name+" wa:"+(r.wa||"none")+" email:"+(r.email||"none")).join("; ") : "none on file yet") + "\nSTUDENTS (" + sc2.rows.length + "): " + sc2.rows.map(r=>r.roll_no+" "+r.name+" ["+r.class_name+"] wa:"+(r.wa||"none")+" email:"+(r.email||"none")).join("; ");
         }
       } catch (eLive) { live = ""; }
 
@@ -2655,14 +2675,14 @@ async function handleApi(method, pathname, req, res) {
         "my-schedules": "The user is in MY SCHEDULES (admin area). Help with creating/managing schedules, the AI Schedule Generator, lecture durations, weekly schedule, attendance, teaching summary, HR personnel, exam marks, holidays.",
         "schedule": "The user is viewing a SPECIFIC SCHEDULE. Use the live schedule data to answer questions about its faculty, classes, days, and timetable.",
         "schedule-dashboard": "The user is on a SCHEDULE DASHBOARD. Help navigate its features (Weekly Schedule, New Entry, Teaching Summary, Attendance, HR Personnel, Exam Marks, Holidays, Meeting Availability) for this specific schedule.",
-        "faculty-portal": "The user is a FACULTY member signed into their portal. Use their live schedule data to answer about their classes, today's timetable, attendance marking, exam marks, and notes. Only discuss THEIR domain.",
-        "student-portal": "The user is a STUDENT signed into their portal. Use their live data to answer about their attendance percentage, fee status, exam marks, notes, and schedule. Only discuss THEIR own records.",
-        "finance": "The user is in ACCOUNT & FINANCE. Use the live finance data to answer about fees, salaries, payments, summaries, profit/loss, and expenses for this schedule and month.",
-        "admin": "The user is a SUPER ADMIN in the Admin Panel. You may help with ALL areas (schedules, faculty, students, finance) PLUS admin-only topics: managing users, passwords, account locking, expiry dates, and the user CSV."
+        "faculty-portal": "The user is a FACULTY member signed into their portal. Use their live data to answer about their classes, timetable, attendance, and notes. You MAY share the whatsapp numbers and exam marks of THEIR OWN students (those listed under YOUR STUDENTS in live data). You must NEVER reveal contact info or marks of other faculty's students, nor any other faculty member's personal contact details. If asked for someone outside their classes, politely decline and explain they can only access their own students' info.",
+        "student-portal": "The user is a STUDENT signed into their portal. Use their live data to answer about their OWN attendance, fees, marks, notes, and schedule. You may share ONLY their OWN whatsapp/email. You must NEVER reveal any other student's or any faculty member's whatsapp, email, or marks. If asked for anyone else's contact info, politely decline.",
+        "finance": "The user is in ACCOUNT & FINANCE (trusted management). Use the live finance data for fees, salaries, payments, P&L, and expenses. You MAY share the full contact directory provided (all faculty and student whatsapp/email) when asked.",
+        "admin": "The user is a SUPER ADMIN (full trusted access). Help with ALL areas plus admin topics (users, passwords, locking, expiry, CSV). You MAY share any contact info in the live data — all faculty and student whatsapp/email."
       };
       const domInstr = domainMap[dom] || domainMap["home"];
 
-      const sys = "You are the AcadTrack assistant, a helpful guide for the schoolcollege.online academic management system. Answer concisely and practically, in a friendly tone. Base your answers on the knowledge below and any live data provided. If asked about something outside the user's current area, gently guide them. Keep answers short unless detail is requested.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
+      const sys = "You are the AcadTrack assistant for the schoolcollege.online academic management system. Answer concisely, practically, and in a friendly tone.\n\nCRITICAL RULES:\n1. When LIVE DATA is provided below, ANSWER THE QUESTION DIRECTLY using those exact numbers. Do NOT tell the user to go to another screen, dashboard, or CSV to find information that is already in the live data.\n2. Never say 'I don't have that information' or 'check the Schedule Dashboard' if the answer is computable from the live data provided.\n3. Only give step-by-step navigation when the user EXPLICITLY asks HOW TO DO an action (e.g. 'how do I mark attendance'). For data questions ('how many...', 'what is...'), just state the answer from live data.\n4. If live data is genuinely absent for a specific question, give a brief direct answer from general knowledge, not a screen referral.\n\n=== CURRENT CONTEXT ===\n" + domInstr + "\n\n" + (live ? "=== LIVE DATA ===\n" + live + "\n\n" : "") + "=== SYSTEM KNOWLEDGE BASE ===\n" + KB;
 
       const dsMessages = [{ role: "system", content: sys }, ...messages.slice(-10).map(m => ({ role: m.role, content: m.content }))];
       const response = await fetch("https://api.deepseek.com/chat/completions", {

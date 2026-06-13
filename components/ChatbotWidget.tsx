@@ -136,9 +136,18 @@ export default function ChatbotWidget() {
   const pathname = usePathname();
   const params = useLocalSearchParams();
   function detectContext() {
-    const p = (pathname || "").toLowerCase();
+    // Read the REAL browser URL (widget is mounted at app root, so screen params may not propagate)
+    let p = (pathname || "").toLowerCase();
+    let urlSid = "";
+    try {
+      if (typeof window !== "undefined" && window.location) {
+        p = (window.location.pathname + window.location.search + window.location.hash).toLowerCase();
+        const qs = new URLSearchParams(window.location.search || (window.location.hash.includes("?") ? window.location.hash.split("?")[1] : ""));
+        urlSid = qs.get("scheduleId") || "";
+      }
+    } catch {}
+    const sid = urlSid || (params as any)?.scheduleId || "";
     let domain = "home", identity: any = {};
-    const sid = (params as any)?.scheduleId || "";
     if (p.includes("faculty-portal")) {
       domain = "faculty-portal";
       try { const s = JSON.parse((typeof localStorage !== "undefined" && localStorage.getItem("facultySession")) || "{}"); if (s.name || s.facultyName || s.username) identity = { name: s.name || s.facultyName || s.username }; } catch {}
@@ -149,9 +158,9 @@ export default function ChatbotWidget() {
     else if (p.includes("admin-panel")) { domain = "admin"; }
     else if (p.includes("schedule-dashboard")) { domain = "schedule-dashboard"; }
     else if (p.includes("schedule-generator")) { domain = "my-schedules"; }
-    else if (p.includes("/schedule")) { domain = "schedule"; }
-    else if (p.includes("my-schedules")) { domain = "my-schedules"; }
     else if (p.includes("attendance") || p.includes("summary") || p.includes("personnel") || p.includes("exam") || p.includes("holidays") || p.includes("meeting") || p.includes("students") || p.includes("entry")) { domain = "schedule-dashboard"; }
+    else if (p.includes("/schedule")) { domain = "schedule-dashboard"; }
+    else if (p.includes("my-schedules")) { domain = sid ? "schedule-dashboard" : "my-schedules"; }
     return { domain, scheduleId: sid, identity };
   }
 
