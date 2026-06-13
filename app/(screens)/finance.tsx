@@ -79,6 +79,53 @@ type PeriodMode = "semester" | "month";
 type PayRow = { personId: string; personName: string; amount: string; paidAmount: string; notes: string; dirty: boolean };
 type RateRow = { personId: string; personName: string; rate: string; dirty: boolean };
 
+function csvEscape(v: any) { const s = String(v ?? ""); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; }
+function triggerCsvDownload(filename: string, lines: string[]) {
+  const csv = lines.join("\n");
+  if (typeof document === "undefined") return;
+  const blob = new Blob(["\ufeff" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a"); a.href = url; a.download = filename; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+function studentClassOf(personId: string) { const p = personId.split("-"); return p.length >= 3 ? p.slice(0,3).join("-") : personId; }
+function payRowsToCsv(rows: { personId: string; personName: string; amount: string; paidAmount: string }[], isStudent: boolean) {
+  const head = isStudent ? ["Roll No","Name","Class","Due","Paid","Balance","Status"] : ["Name","Due","Paid","Balance","Status"];
+  const lines = [head.join(",")];
+  rows.forEach(r => {
+    const due = parseFloat(r.amount) || 0, paid = parseFloat(r.paidAmount) || 0, bal = due - paid;
+    const status = paid <= 0 ? "Unpaid" : paid >= due ? "Paid" : "Partial";
+    const cells = isStudent
+      ? [r.personId, r.personName, studentClassOf(r.personId), due, paid, bal, status]
+      : [r.personName, due, paid, bal, status];
+    lines.push(cells.map(csvEscape).join(","));
+  });
+  return lines;
+}
+
+function buildSummaryCsv(periodLabel: string, overall: any, pl: any) {
+  const bal = (overall.totalDue || 0) - (overall.totalPaid || 0);
+  return [
+    "Finance Summary," + csvEscape(periodLabel),
+    "",
+    "Metric,Value",
+    "Total Due," + (overall.totalDue || 0),
+    "Total Paid," + (overall.totalPaid || 0),
+    "Balance," + bal,
+    "Paid (count)," + (overall.paid || 0),
+    "Partial (count)," + (overall.partial || 0),
+    "Unpaid (count)," + (overall.unpaid || 0),
+    "",
+    "Profit & Loss,Amount",
+    "Fee Income," + (pl.income || 0),
+    "Faculty Salary," + (pl.facultySalary || 0),
+    "Staff Salary," + (pl.staffSalary || 0),
+    "Other Expenses," + (pl.expenses || 0),
+    "Profit/Loss," + (pl.profit || 0),
+  ];
+}
+
+
 export default function FinanceScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
@@ -113,6 +160,27 @@ export default function FinanceScreen() {
   const [facultyRows, setFacultyRows] = useState<PayRow[]>([]);
   const [staffPayRows, setStaffPayRows] = useState<PayRow[]>([]);
   const [saving, setSaving] = useState(false);
+  function periodLabelForCsv() {
+    return studentPeriodMode === "semester" ? selectedSem.label : (monthLabel(selectedMonth) + " " + selectedMonth.split("-")[0]);
+  }
+  function dlStudents() { triggerCsvDownload("Finance_Students_" + (period||"") + ".csv", payRowsToCsv(studentRows, true)); }
+  function dlFaculty() { triggerCsvDownload("Finance_Faculty_" + (period||"") + ".csv", payRowsToCsv(facultyRows, false)); }
+  function dlStaff() { triggerCsvDownload("Finance_Staff_" + (period||"") + ".csv", payRowsToCsv(staffPayRows, false)); }
+  function dlSummary() {
+    const overall = (summary as any)?.overall ?? { totalDue:0,totalPaid:0,paid:0,partial:0,unpaid:0 };
+    const pl = (summary as any)?.pl ?? { income:0,facultySalary:0,staffSalary:0,expenses:0,profit:0 };
+    triggerCsvDownload("Finance_Summary_" + (period||"") + ".csv", buildSummaryCsv(periodLabelForCsv(), overall, pl));
+  }
+  function dlAll() {
+    const overall = (summary as any)?.overall ?? { totalDue:0,totalPaid:0,paid:0,partial:0,unpaid:0 };
+    const pl = (summary as any)?.pl ?? { income:0,facultySalary:0,staffSalary:0,expenses:0,profit:0 };
+    const lines: string[] = [];
+    lines.push("=== SUMMARY ==="); lines.push(...buildSummaryCsv(periodLabelForCsv(), overall, pl));
+    lines.push(""); lines.push("=== STUDENTS ==="); lines.push(...payRowsToCsv(studentRows, true));
+    lines.push(""); lines.push("=== FACULTY ==="); lines.push(...payRowsToCsv(facultyRows, false));
+    lines.push(""); lines.push("=== SUPPORT STAFF ==="); lines.push(...payRowsToCsv(staffPayRows, false));
+    triggerCsvDownload("Finance_Report_All_" + (period||"") + ".csv", lines);
+  }
 
   // ── Staff management ───────────────────────────────────────────────────
   const [newEmpId, setNewEmpId] = useState("");
@@ -944,6 +1012,8 @@ export default function FinanceScreen() {
     return (
       <View style={{ flex: 1 }}>
         {renderRatesBar("staff")}
+        <TouchableOpacity onPress={dlStaff} style={{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:6, backgroundColor:"#00695C", marginHorizontal:14, marginTop:10, marginBottom:2, borderRadius:9, paddingVertical:9 }}><Feather name="download" size={14} color="#fff" /><Text style={{ color:"#fff", fontFamily:"Inter_600SemiBold", fontSize:13 }}>Download CSV</Text></TouchableOpacity>
+
         <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 10, paddingVertical: 6, backgroundColor: colors.card, borderBottomWidth: 1, borderBottomColor: colors.border }}>
           <Text style={{ fontSize: 12, fontFamily: "Inter_400Regular", color: colors.mutedForeground }}>
             {staffList.length} staff members · Upload template to add staff, then enter amounts
@@ -1087,6 +1157,10 @@ export default function FinanceScreen() {
             <Text style={s.navBtnTxt}>Home</Text>
           </TouchableOpacity>
           <NotifToggle />
+          <TouchableOpacity style={s.navBtn} onPress={dlAll}>
+            <Feather name="download" size={13} color="#fff" />
+            <Text style={s.navBtnTxt}>All CSV</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={s.navBtn} onPress={handleLogout}>
             <Feather name="log-out" size={13} color="#fff" />
             <Text style={s.navBtnTxt}>Logout</Text>
@@ -1121,7 +1195,7 @@ export default function FinanceScreen() {
         ))}
       </View>
 
-      {activeTab === "summary" && renderSummary()}
+      {activeTab === "summary" && (<View style={{ flex: 1 }}><TouchableOpacity onPress={dlSummary} style={{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:6, backgroundColor:"#00695C", marginHorizontal:14, marginTop:10, marginBottom:2, borderRadius:9, paddingVertical:9 }}><Feather name="download" size={14} color="#fff" /><Text style={{ color:"#fff", fontFamily:"Inter_600SemiBold", fontSize:13 }}>Download CSV</Text></TouchableOpacity>{renderSummary()}</View>)}
       <Modal visible={showExpensesModal} transparent animationType="slide" onRequestClose={() => setShowExpensesModal(false)}>
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
           <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", padding: 16 }}>
@@ -1178,6 +1252,8 @@ export default function FinanceScreen() {
       {activeTab === "students" && (
         <View style={{ flex: 1 }}>
           {renderRatesBar("student")}
+          <TouchableOpacity onPress={dlStudents} style={{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:6, backgroundColor:"#00695C", marginHorizontal:14, marginTop:10, marginBottom:2, borderRadius:9, paddingVertical:9 }}><Feather name="download" size={14} color="#fff" /><Text style={{ color:"#fff", fontFamily:"Inter_600SemiBold", fontSize:13 }}>Download CSV</Text></TouchableOpacity>
+
           {/* Class filter + student search */}
           {studentRows.length > 0 && (() => {
             const allClasses = ["All", ...Array.from(new Set(studentRows.map(r => {
@@ -1354,6 +1430,8 @@ export default function FinanceScreen() {
       {activeTab === "faculty" && (
         <View style={{ flex: 1 }}>
           {renderRatesBar("faculty")}
+          <TouchableOpacity onPress={dlFaculty} style={{ flexDirection:"row", alignItems:"center", justifyContent:"center", gap:6, backgroundColor:"#00695C", marginHorizontal:14, marginTop:10, marginBottom:2, borderRadius:9, paddingVertical:9 }}><Feather name="download" size={14} color="#fff" /><Text style={{ color:"#fff", fontFamily:"Inter_600SemiBold", fontSize:13 }}>Download CSV</Text></TouchableOpacity>
+
           {renderPayTable(facultyRows, "faculty")}
         </View>
       )}

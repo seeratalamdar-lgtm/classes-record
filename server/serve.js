@@ -1524,10 +1524,10 @@ async function handleApi(method, pathname, req, res) {
       if (lockCheck.rows.length > 0) return json(res, 403, { error: "Session locked: class was marked as Missed on this date. Attendance cannot be taken.", locked: true });
       // Check if date is a Gazetted Holiday
       const holidayCheck = await db.query(
-        "SELECT name FROM public.holidays WHERE schedule_id= AND date::date=::date LIMIT 1",
+        "SELECT description FROM public.holidays WHERE schedule_id=$1 AND date::date=$2::date LIMIT 1",
         [body.scheduleId, body.date]
       );
-      if (holidayCheck.rows.length > 0) return json(res, 403, { error: "Gazetted Holiday: " + holidayCheck.rows[0].name + ". Attendance cannot be taken on a public holiday.", locked: true });
+      if (holidayCheck.rows.length > 0) return json(res, 403, { error: "Gazetted Holiday: " + (holidayCheck.rows[0].description || "Holiday") + ". Attendance cannot be taken on a public holiday.", locked: true });
       // ---- Queue WhatsApp notifications for Absent / Leave students ----
       try {
         const ne = await db.query("SELECT value FROM public.app_settings WHERE key='notifications_enabled'");
@@ -2875,6 +2875,7 @@ async function fixSequences() {
   await db.query("ALTER TABLE public.students ADD COLUMN IF NOT EXISTS whatsapp TEXT DEFAULT ''");
   await db.query("CREATE TABLE IF NOT EXISTS public.notifications (id SERIAL PRIMARY KEY, schedule_id INTEGER, class_name TEXT, roll_no TEXT, student_name TEXT, whatsapp TEXT, date TEXT, session_time TEXT, message TEXT, status TEXT DEFAULT 'pending', created_at TIMESTAMP DEFAULT NOW(), sent_at TIMESTAMP)");
   await db.query("CREATE UNIQUE INDEX IF NOT EXISTS notifications_dedupe ON public.notifications (schedule_id, class_name, roll_no, date, session_time)");
+  await db.query("CREATE UNIQUE INDEX IF NOT EXISTS attendance_unique_session ON public.attendance (schedule_id, class_name, roll_no, date, session_time)");
   await db.query("CREATE TABLE IF NOT EXISTS public.app_settings (key TEXT PRIMARY KEY, value TEXT)");
   await db.query(`INSERT INTO public.app_settings (key, value) VALUES ('notifications_enabled','true') ON CONFLICT (key) DO NOTHING`);
   await db.query("CREATE TABLE IF NOT EXISTS public.finance_expenses (id SERIAL PRIMARY KEY, schedule_id INTEGER, date DATE, expense_head TEXT, description TEXT, amount NUMERIC(12,2) DEFAULT 0, remarks TEXT, created_at TIMESTAMP DEFAULT NOW())");
