@@ -217,6 +217,66 @@ async function handleApi(method, pathname, req, res) {
     } catch(e) { return json(res, 200, []); }
   }
 
+  // GET /api/personnel/roster?scheduleId=&type=faculty|staff — merged list with contact fields
+  if (method === "GET" && pathname === "/api/personnel/roster") {
+    const sid = parseInt(reqUrl.searchParams.get("scheduleId") || "0");
+    const type = reqUrl.searchParams.get("type") || "faculty";
+    try {
+      const people = {};
+      if (type === "faculty") {
+        const sch = await db.query("SELECT DISTINCT faculty AS name FROM public.weekly_schedule WHERE schedule_id=$1 AND faculty != '_locations_' AND (type IS NULL OR type='') ORDER BY faculty", [sid]);
+        sch.rows.forEach(r => { if (r.name) people[r.name] = { name: r.name, email: "", whatsapp: "", inSchedule: true }; });
+        const fin = await db.query("SELECT name, COALESCE(email,'') AS email, COALESCE(whatsapp,'') AS whatsapp FROM public.finance_faculty WHERE schedule_id=$1", [sid]);
+        fin.rows.forEach(r => { people[r.name] = { name: r.name, email: r.email, whatsapp: r.whatsapp, inSchedule: !!people[r.name] }; });
+      } else if (type === "student") {
+        const stu = await db.query("SELECT id, roll_no, name, COALESCE(email,'') AS email, COALESCE(whatsapp,'') AS whatsapp, COALESCE(class_name,'') AS class_name FROM public.students WHERE schedule_id=$1 ORDER BY class_name, roll_no", [sid]);
+        return json(res, 200, { success: true, people: stu.rows.map(r => ({ id: r.id, rollNo: r.roll_no, name: r.name || "", email: r.email, whatsapp: r.whatsapp, className: r.class_name })) });
+      } else {
+        const st = await db.query("SELECT name, COALESCE(email,'') AS email, COALESCE(whatsapp,'') AS whatsapp FROM public.support_staff WHERE schedule_id=$1 ORDER BY name", [sid]);
+        st.rows.forEach(r => { people[r.name] = { name: r.name, email: r.email, whatsapp: r.whatsapp, inSchedule: true }; });
+      }
+      const list = Object.values(people).sort((a, b) => a.name.localeCompare(b.name));
+      return json(res, 200, { success: true, people: list });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
+  // POST /api/personnel/student-update — edit a student by id (roll_no is identity, safe to rename display name)
+  if (method === "POST" && pathname === "/api/personnel/student-update") {
+    const { id, name, email, whatsapp } = body;
+    if (!id) return json(res, 400, { error: "id required" });
+    const wd = String(whatsapp || "").replace(/[^0-9]/g, "");
+    const wa = !wd ? "" : (wd.length === 11 && wd.startsWith("0")) ? "+92" + wd.slice(1) : wd.startsWith("92") ? "+" + wd : (wd.length === 10 && wd.startsWith("3")) ? "+92" + wd : "+" + wd;
+    try {
+      await db.query("UPDATE public.students SET name=$1, email=$2, whatsapp=CASE WHEN $3<>'' THEN $3 ELSE whatsapp END WHERE id=$4", [String(name || "").trim(), email || "", wa, parseInt(id)]);
+      return json(res, 200, { success: true });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
+  // POST /api/personnel/update — edit one person's name/email/whatsapp (rename cascades)
+  if (method === "POST" && pathname === "/api/personnel/update") {
+    const { scheduleId, type, oldName, name, email, whatsapp } = body;
+    const sid = parseInt(scheduleId || "0");
+    if (!sid || !oldName || !name) return json(res, 400, { error: "scheduleId, oldName, name required" });
+    const wd = String(whatsapp || "").replace(/[^0-9]/g, "");
+    const wa = !wd ? "" : (wd.length === 11 && wd.startsWith("0")) ? "+92" + wd.slice(1) : wd.startsWith("92") ? "+" + wd : (wd.length === 10 && wd.startsWith("3")) ? "+92" + wd : "+" + wd;
+    try {
+      const tbl = type === "staff" ? "support_staff" : "finance_faculty";
+      // upsert the contact row under the (possibly new) name
+      await db.query("INSERT INTO public." + tbl + " (schedule_id, name, email, whatsapp) VALUES ($1,$2,$3,$4) ON CONFLICT (schedule_id, name) DO UPDATE SET email=$3, whatsapp=CASE WHEN $4<>'' THEN $4 ELSE public." + tbl + ".whatsapp END", [sid, name, email || "", wa]);
+      if (oldName !== name) {
+        // rename cascade across all tables that key on the name
+        if (type !== "staff") {
+          await db.query("UPDATE public.weekly_schedule SET faculty=$1 WHERE schedule_id=$2 AND faculty=$3", [name, sid, oldName]);
+        }
+        await db.query("UPDATE public.finance_payments SET person_name=$1 WHERE schedule_id=$2 AND person_type=$3 AND person_name=$4", [name, sid, (type === "staff" ? "staff" : "faculty"), oldName]);
+        await db.query("UPDATE public.finance_rates SET person_id=$1, label=$1 WHERE schedule_id=$2 AND person_type=$3 AND (person_id=$4 OR label=$4)", [name, sid, (type === "staff" ? "staff" : "faculty"), oldName]);
+        // remove the now-duplicate old contact row
+        await db.query("DELETE FROM public." + tbl + " WHERE schedule_id=$1 AND name=$2", [sid, oldName]);
+      }
+      return json(res, 200, { success: true });
+    } catch (e) { return json(res, 500, { error: String(e) }); }
+  }
+
   if (method === "GET" && pathname === "/api/finance/persons") {
     const scheduleId = reqUrl.searchParams.get("scheduleId");
     const personType = reqUrl.searchParams.get("personType");

@@ -9,6 +9,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { useColors } from "@/hooks/useColors";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import { showAlert, showConfirm } from "@/utils/crossPlatform";
 import { fetchSchedule, addFinancePerson, deactivateFinancePerson } from "@/hooks/useApi";
 import { PickerModal } from "@/components/PickerModal";
 
@@ -29,6 +30,11 @@ export default function PersonnelScreen() {
   const [personName, setPersonName] = useState("");
   const [personEmail, setPersonEmail] = useState("");
   const [personWhatsapp, setPersonWhatsapp] = useState("");
+  const [showRoster, setShowRoster] = useState(false);
+  const [rosterRows, setRosterRows] = useState<any[]>([]);
+  const [rosterLoading, setRosterLoading] = useState(false);
+  const [rosterSearch, setRosterSearch] = useState("");
+  const [rosterSavingIdx, setRosterSavingIdx] = useState<number | null>(null);
   const [studentName, setStudentName] = useState("");
   const [showEffectiveDatePicker, setShowEffectiveDatePicker] = useState(false);
   const [effectiveDate, setEffectiveDate] = useState(() => {
@@ -75,6 +81,39 @@ export default function PersonnelScreen() {
 
   // Get active persons for leave action (from finance_faculty/students/staff)
   const isHRTab = activeTab === "faculty" || activeTab === "student" || activeTab === "staff";
+  const ROSTER_API = "https://" + (process.env.EXPO_PUBLIC_DOMAIN || "schoolcollege.online") + "/api";
+  async function openRoster() {
+    setShowRoster(true); setRosterLoading(true); setRosterSearch("");
+    try {
+      const r = await fetch(ROSTER_API + "/personnel/roster?scheduleId=" + scheduleId + "&type=" + activeTab).then(x => x.json());
+      setRosterRows((r.people || []).map((p: any) => ({ ...p, oldName: p.name, dirty: false })));
+    } catch { setRosterRows([]); }
+    setRosterLoading(false);
+  }
+  function setRosterField(idx: number, field: string, val: string) {
+    setRosterRows(rows => rows.map((r, i) => i === idx ? { ...r, [field]: val, dirty: true } : r));
+  }
+  async function saveRosterRow(idx: number) {
+    const row = rosterRows[idx];
+    if (!row.name.trim()) { showAlert("Name cannot be empty"); return; }
+    if (activeTab !== "student" && row.name.trim() !== row.oldName && typeof window !== "undefined") {
+      if (!showConfirm("Renaming \"" + row.oldName + "\" to \"" + row.name.trim() + "\" will update this person across the schedule, payments, and notifications. Continue?")) return;
+    }
+    setRosterSavingIdx(idx);
+    try {
+      const url = activeTab === "student" ? "/personnel/student-update" : "/personnel/update";
+      const payload = activeTab === "student"
+        ? { id: row.id, name: row.name.trim(), email: row.email, whatsapp: row.whatsapp }
+        : { scheduleId, type: activeTab, oldName: row.oldName, name: row.name.trim(), email: row.email, whatsapp: row.whatsapp };
+      const r = await fetch(ROSTER_API + url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload) }).then(x => x.json());
+      if (r.success) {
+        setRosterRows(rows => rows.map((x, i) => i === idx ? { ...x, oldName: x.name.trim(), dirty: false } : x));
+        showAlert("Saved " + row.name.trim());
+        qc.invalidateQueries({ queryKey: ["schedule", scheduleId] });
+      } else showAlert(r.error || "Save failed");
+    } catch (e: any) { showAlert("Error: " + e.message); }
+    setRosterSavingIdx(null);
+  }
   const { data: activePersons = [] } = useQuery({
     queryKey: ["finance-persons", scheduleId, activeTab],
     queryFn: async () => {
@@ -245,6 +284,12 @@ export default function PersonnelScreen() {
           </View>
         )}
 
+        {(activeTab === "faculty" || activeTab === "staff" || activeTab === "student") && (
+          <TouchableOpacity onPress={openRoster} style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 7, backgroundColor: activeTab === "faculty" ? "#4A148C" : activeTab === "student" ? "#1565C0" : "#2E7D32", marginHorizontal: 14, marginTop: 12, borderRadius: 10, paddingVertical: 11 }}>
+            <Feather name="edit-3" size={15} color="#fff" />
+            <Text style={{ color: "#fff", fontFamily: "Inter_700Bold", fontSize: 14 }}>Edit Roster — Names, Email & WhatsApp</Text>
+          </TouchableOpacity>
+        )}
         {(activeTab === "faculty" || activeTab === "student" || activeTab === "staff") && (
           <>
             {/* JOIN Card */}
@@ -395,6 +440,50 @@ export default function PersonnelScreen() {
         onClose={() => setShowPersonPicker(false)}
         placeholder={`Search ${tabLabels[activeTab]}...`}
       />
+
+      <Modal visible={showRoster} transparent animationType="slide" onRequestClose={() => setShowRoster(false)}>
+        <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+          <View style={{ backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "90%", paddingBottom: insets.bottom + 10 }}>
+            <View style={{ flexDirection: "row", alignItems: "center", padding: 16, borderBottomWidth: 1, borderBottomColor: "#ECEFF1" }}>
+              <Feather name="edit-3" size={18} color={activeTab === "faculty" ? "#4A148C" : "#2E7D32"} style={{ marginRight: 8 }} />
+              <Text style={{ flex: 1, fontSize: 16, fontFamily: "Inter_700Bold", color: "#263238" }}>Edit {activeTab === "faculty" ? "Faculty" : activeTab === "student" ? "Student" : "Staff"} Roster</Text>
+              <TouchableOpacity onPress={() => setShowRoster(false)}><Feather name="x" size={22} color="#607D8B" /></TouchableOpacity>
+            </View>
+            <View style={{ paddingHorizontal: 14, paddingTop: 10 }}>
+              <TextInput value={rosterSearch} onChangeText={setRosterSearch} placeholder="Search name..." placeholderTextColor="#90A4AE" style={{ borderWidth: 1, borderColor: "#CFD8DC", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 9, fontSize: 14, fontFamily: "Inter_400Regular", color: "#263238", backgroundColor: "#F5F7F8" }} />
+            </View>
+            {rosterLoading ? <ActivityIndicator color="#4A148C" style={{ marginVertical: 30 }} size="large" /> : (
+              <ScrollView style={{ maxHeight: 480 }} contentContainerStyle={{ padding: 14, paddingTop: 8 }}>
+                {rosterRows.filter(r => !rosterSearch.trim() || r.name.toLowerCase().includes(rosterSearch.trim().toLowerCase())).length === 0 &&
+                  <Text style={{ textAlign: "center", color: "#90A4AE", fontFamily: "Inter_400Regular", fontSize: 13, paddingVertical: 20 }}>No matching people</Text>}
+                {rosterRows.map((row, idx) => ({ row, idx }))
+                  .filter(({ row }) => { const q = rosterSearch.trim().toLowerCase(); return !q || row.name.toLowerCase().includes(q) || String(row.rollNo||"").toLowerCase().includes(q) || String(row.className||"").toLowerCase().includes(q); })
+                  .map(({ row, idx }) => (
+                  <View key={idx} style={{ borderWidth: 1, borderColor: "#ECEFF1", borderRadius: 12, padding: 12, marginBottom: 10, backgroundColor: "#FAFAFA" }}>
+                    {activeTab === "student" && <Text style={{ fontSize: 11, fontFamily: "Inter_700Bold", color: "#1565C0", marginBottom: 4 }}>{row.rollNo}{row.className ? "  ·  " + row.className : ""}</Text>}
+                    <Text style={{ fontSize: 10.5, fontFamily: "Inter_600SemiBold", color: "#90A4AE", marginBottom: 3 }}>NAME</Text>
+                    <TextInput value={row.name} onChangeText={(v) => setRosterField(idx, "name", v)} style={{ borderWidth: 1, borderColor: "#CFD8DC", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13.5, fontFamily: "Inter_600SemiBold", color: "#263238", marginBottom: 8 }} />
+                    <View style={{ flexDirection: "row", gap: 8 }}>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10.5, fontFamily: "Inter_600SemiBold", color: "#90A4AE", marginBottom: 3 }}>EMAIL</Text>
+                        <TextInput value={row.email} onChangeText={(v) => setRosterField(idx, "email", v)} placeholder="email@example.com" placeholderTextColor="#B0BEC5" autoCapitalize="none" keyboardType="email-address" style={{ borderWidth: 1, borderColor: "#CFD8DC", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12.5, fontFamily: "Inter_400Regular", color: "#37474F" }} />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 10.5, fontFamily: "Inter_600SemiBold", color: "#90A4AE", marginBottom: 3 }}>WHATSAPP</Text>
+                        <TextInput value={row.whatsapp} onChangeText={(v) => setRosterField(idx, "whatsapp", v)} placeholder="03001234567" placeholderTextColor="#B0BEC5" keyboardType="phone-pad" style={{ borderWidth: 1, borderColor: "#CFD8DC", borderRadius: 8, paddingHorizontal: 10, paddingVertical: 8, fontSize: 12.5, fontFamily: "Inter_400Regular", color: "#37474F" }} />
+                      </View>
+                    </View>
+                    <TouchableOpacity onPress={() => saveRosterRow(idx)} disabled={rosterSavingIdx === idx || !row.dirty}
+                      style={{ marginTop: 10, backgroundColor: row.dirty ? (activeTab === "faculty" ? "#4A148C" : "#2E7D32") : "#CFD8DC", borderRadius: 8, paddingVertical: 9, alignItems: "center" }}>
+                      {rosterSavingIdx === idx ? <ActivityIndicator color="#fff" size="small" /> : <Text style={{ color: "#fff", fontFamily: "Inter_600SemiBold", fontSize: 13 }}>{row.dirty ? "Save Changes" : "Saved"}</Text>}
+                    </TouchableOpacity>
+                  </View>
+                ))}
+              </ScrollView>
+            )}
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
